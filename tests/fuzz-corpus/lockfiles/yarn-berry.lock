@@ -1,0 +1,6 @@
+__metadata:
+  version: 8
+
+"react@npm:^18.2.0":
+  version: 18.2.0
+  resolution: "react@npm:18.2.0"

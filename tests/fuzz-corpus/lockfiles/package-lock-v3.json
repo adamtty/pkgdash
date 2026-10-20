@@ -1,0 +1,4 @@
+{"name": "app", "lockfileVersion": 3, "packages": {"": {"name": "app", "version": "1.0.0"},
+ "node_modules/left-pad": {"version": "1.3.0", "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz"},
+ "node_modules/@scope/pkg": {"version": "2.1.0"}, "node_modules/a/node_modules/b": {"version": "0.1.0"},
+ "node_modules/linked": {"link": true, "resolved": "../linked"}}}
