@@ -60,13 +60,15 @@ class LockfileParsing(unittest.TestCase):
     def test_hostile_package_locks_parse_to_nothing(self):
         deep = '{"dependencies": ' + '{"x": {"version": "1", "dependencies": ' * 5000 + "{}" + "}}" * 5000 + "}"
         for text in ("[]", '{"packages": {"node_modules/x": "1.0.0"}}', '{"packages": ["x"]}',
-                     '{"dependencies": {"x": 5}}', '{"packages": {"node_modules/x": {"version": 3}}}', deep, "not json"):
+                     '{"dependencies": {"x": 5}}', '{"packages": {"node_modules/x": {"version": 3}}}', deep, "not json",
+                     # found by Atheris: keys that name no package
+                     '{"packages": {"node_modules/": {"version": "1.0.0"}}}', '{"dependencies": {"": {"version": "1"}}}'):
             self.assertEqual(server.lock_deps("package-lock.json", text), [], text[:40])
 
     def test_real_lockfiles_still_parse(self):
         corpus = os.path.join(HERE, "fuzz-corpus", "lockfiles")
         def deps(seed, fname):
-            with open(os.path.join(corpus, seed)) as f:
+            with open(os.path.join(corpus, seed + ".seed")) as f:
                 return server.lock_deps(fname, f.read())
         self.assertEqual(deps("package-lock-v3.json", "package-lock.json"),
                          [("@scope/pkg", "2.1.0"), ("b", "0.1.0"), ("left-pad", "1.3.0")])

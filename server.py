@@ -1360,14 +1360,16 @@ def lock_deps(fname, text):
             if (isinstance(info, dict) and "node_modules/" in key and not info.get("link")
                     and isinstance(info.get("version"), str) and info["version"]):
                 name = info.get("name")
-                res.add((name if isinstance(name, str) and name else key.rsplit("node_modules/", 1)[1], info["version"]))
+                name = name if isinstance(name, str) and name else key.rsplit("node_modules/", 1)[1]
+                if name:  # a bare "node_modules/" key names nothing (found by fuzzing)
+                    res.add((name, info["version"]))
         if not packages:  # lockfile v1: nested "dependencies", walked without recursion
             todo = [data.get("dependencies")]
             while todo:
                 deps = todo.pop()
                 for n, info in (deps.items() if isinstance(deps, dict) else ()):
                     if isinstance(info, dict):
-                        if isinstance(info.get("version"), str) and info["version"]:
+                        if n and isinstance(info.get("version"), str) and info["version"]:
                             res.add((n, info["version"]))
                         todo.append(info.get("dependencies"))
     elif fname == "yarn.lock":  # yarn 1 (`version "1.2.3"`) and yarn 2+ (`version: 1.2.3`)
