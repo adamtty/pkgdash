@@ -111,7 +111,7 @@ screenshots are made.
 | pip | Homebrew Pythons + `--user` installs in macOS python; flags strays | `pip-audit` | disabled by design (use uv) |
 | go | `go version -m` + `go list -m @latest` | `govulncheck -mode=binary` | `go install <pkg>@latest` (rebuilds with current Go) |
 | cargo | `cargo install --list` + crates.io | OSV (top-level crate only) | `cargo install --locked` |
-| gem | Homebrew Ruby's gems (incl. the ones that ship with Ruby) + `gem outdated` | OSV, every installed version | `gem install <gem> --version <scanned> --conservative` |
+| gem | Homebrew Ruby's gems + `gem outdated`; the ones that ship with Ruby only count as outdated when OSV knows a vulnerability in them | OSV, every installed version | `gem install <gem> --version <scanned> --conservative` |
 | docker | `docker save` per image (cached by image id; nothing runs): OS packages, Python, npm and Ruby gems | OSV, incl. Debian/Ubuntu/Alpine | — |
 | other | ~/.local/bin, /usr/local/bin, extra managers | — | — |
 

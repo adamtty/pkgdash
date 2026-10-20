@@ -375,7 +375,7 @@ const canUpdate = p => { const m = mgr(p.mid); return !!m && m.actions.includes(
 // seconds until a package's new version is past its cooldown period (matches cooldown_left in server.py)
 const coolLeft = p => {
   const days = Number(S.settings.cooldown_days) || 0;
-  return days > 0 && canUpdate(p) && p.outdated && p.latest && p.released ? Math.max(0, p.released + days * 86400 - S.now) : 0;
+  return days > 0 && canUpdate(p) && (p.outdated || p.newer) && p.latest && p.released ? Math.max(0, p.released + days * 86400 - S.now) : 0;
 };
 const leftText = s => s >= 86400 ? `${Math.ceil(s / 86400)} day${Math.ceil(s / 86400) === 1 ? "" : "s"}` : `${Math.max(1, Math.ceil(s / 3600))} hour${Math.ceil(s / 3600) <= 1 ? "" : "s"}`;
 // matches flag_text in server.py
@@ -716,8 +716,10 @@ async function ignoreProject(mid, name, on) {
 }
 function latestCell(p) {
   if (separate(p.mid)) return projCell(p);
-  if (!p.outdated) return '<span class="dim">—</span>';
+  if (!p.outdated && !(p.newer && p.latest)) return '<span class="dim">—</span>';
   if (p.blocked) return `<span style="color:var(--red)">↑ ${esc(p.latest)}</span> <span class="tag red" title="OSV or Socket.dev flags this version, so pkgdash won't install it">blocked: ${esc(flagText(p.blocked))}</span>`;
+  // gems that ship with Ruby (no known vulnerability): a newer release, not counted as outdated
+  if (!p.outdated) return `<span class="dim" title="Ships with Ruby, so brew upgrade ruby updates it too. No known vulnerability in the installed version, so it isn't counted as outdated">↑ ${esc(p.latest)}</span>${updBtn(p)}`;
   const left = coolLeft(p);
   const since = p.released_src === "seen" ? "counting from when pkgdash first saw it" : "counting from its release";
   return `<span style="color:var(--amber)">↑ ${esc(p.latest || "rebuild")}</span>${updBtn(p)}${left ? `<span class="cool" title="${since}">in cooldown period, ${leftText(left)} remaining</span>` : ""}${socketNote(p)}`;

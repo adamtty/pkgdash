@@ -112,9 +112,19 @@ class Gems(unittest.TestCase):
 
     GEMS = json.dumps([["json", "2.18.0", ["2.18.0", "2.9.1"], "default"], ["rake", "13.3.0", ["13.3.0"], "bundled"],
                        ["rubocop", "1.80.0", ["1.80.0"], "gem"], ["tidy", "1.0", ["1.0"], "gem"]])
-    OUTDATED = "json (2.18.0 < 2.19.9)\nrubocop (1.80.0 < 1.81.2)\n"
+    OUTDATED = "json (2.18.0 < 2.19.9)\nrake (13.3.0 < 13.4.2)\nrubocop (1.80.0 < 1.81.2)\n"
+
+    def osv(self, url, body=None, timeout=0):
+        """OSV's querybatch, knowing one advisory: in json 2.18.0."""
+        self.osv_asked.append([q["package"]["name"] for q in body["queries"]])
+        return {"results": [{"vulns": [{"id": "GHSA-3m6g-2423-7cp3"}]} if q["package"]["name"] == "json" else {}
+                            for q in body["queries"]]}
 
     def setUp(self):
+        self.osv_asked = []
+        self.orig_http = server.http_json
+        server.http_json = self.osv
+        self.addCleanup(setattr, server, "http_json", self.orig_http)
         self.gem = server.Gem()
         self.gem.ruby = lambda: "/opt/homebrew/bin/ruby"
         self.gem.gem = lambda: "/opt/homebrew/Cellar/ruby/4.0.7/bin/gem"
@@ -125,8 +135,19 @@ class Gems(unittest.TestCase):
         self.assertEqual(sorted(rows), ["json", "rake", "rubocop", "tidy"])
         self.assertEqual((rows["json"]["latest"], rows["rubocop"]["latest"], rows["tidy"]["latest"]), ("2.19.9", "1.81.2", None))
         self.assertTrue(rows["rubocop"]["outdated"] and not rows["tidy"]["outdated"])
+        # Ruby's own gems: json has a known vulnerability so it counts; rake has none, so it's only `newer`
+        self.assertEqual(self.osv_asked, [["json", "rake"]])  # gems you installed aren't asked about
+        self.assertTrue(rows["json"]["outdated"])
+        self.assertEqual((rows["rake"]["outdated"], rows["rake"].get("newer"), rows["rake"]["latest"]), (False, True, "13.4.2"))
         self.assertIn("default gem", rows["json"]["note"])
         self.assertIn("also installed: 2.9.1", rows["json"]["note"])
+
+    def test_osv_unreachable_counts_rubys_own_gems_as_outdated(self):
+        def down(*a, **k):
+            raise OSError("no network")
+        server.http_json = down
+        rows = {r["name"]: r for r in self.gem.scan(self.job)}
+        self.assertTrue(rows["rake"]["outdated"] and not rows["rake"].get("newer"))
 
     def test_every_installed_version_is_checked(self):
         self.assertIn(("json", "2.9.1", "json"), self.gem.dep_tree(self.job))
@@ -144,7 +165,7 @@ class Gems(unittest.TestCase):
         finally:
             server.which = orig
 
-    def test_update_installs_the_scanned_version(self):
+    def installs(self, only=None):
         inv = {("gem", r["name"]): r for r in self.gem.scan(self.job)}
         inv[("gem", "rubocop")]["latest"] = "1.81.2 --source=https://evil.example"
         orig_inv, orig_gate = server.inv_pkgs, server.Manager.gate
@@ -152,12 +173,25 @@ class Gems(unittest.TestCase):
         server.Manager.gate = lambda self, job: {}
         try:
             self.job.ran.clear()
-            self.gem.update(self.job)
+            self.gem.update(self.job, only)
         finally:
             server.inv_pkgs, server.Manager.gate = orig_inv, orig_gate
-        installs = [c for c in self.job.ran if "install" in c]
-        self.assertEqual(installs, [["/opt/homebrew/Cellar/ruby/4.0.7/bin/gem", "install", "json", "--version", "2.19.9",
-                                     "--conservative", "--no-document"]])  # rubocop's odd "version" is skipped
+        return [c[2:5] for c in self.job.ran if "install" in c]
+
+    def test_update_installs_the_scanned_version(self):
+        self.assertEqual(self.installs(), [["json", "--version", "2.19.9"]])  # rake is only `newer`; rubocop's odd "version" is skipped
+        cmd = [c for c in self.job.ran if "install" in c][0]
+        self.assertEqual(cmd, ["/opt/homebrew/Cellar/ruby/4.0.7/bin/gem", "install", "json", "--version", "2.19.9",
+                               "--conservative", "--no-document"])
+
+    def test_a_newer_gem_updates_when_asked_for_by_name(self):
+        self.assertEqual(self.installs(("gem", "rake")), [["rake", "--version", "13.4.2"]])
+
+    def test_newer_gems_still_wait_out_the_cooldown(self):
+        p = {"newer": True, "outdated": False, "latest": "13.4.2", "released": server.now() - 3600}
+        self.addCleanup(server.store["settings"].__setitem__, "cooldown_days", server.store["settings"].get("cooldown_days"))
+        server.store["settings"]["cooldown_days"] = 5
+        self.assertGreater(server.cooldown_left(p), 0)
 
 
 class DockerGems(unittest.TestCase):

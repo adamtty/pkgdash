@@ -111,7 +111,7 @@ def parse_iso(s):
 def cooldown_left(p):
     """Seconds until a package's new version is old enough to install (0 = go ahead)."""
     days = float(store["settings"].get("cooldown_days") or 0)
-    if days <= 0 or not p.get("outdated") or not p.get("latest") or not p.get("released"):
+    if days <= 0 or not (p.get("outdated") or p.get("newer")) or not p.get("latest") or not p.get("released"):
         return 0
     return max(0, p["released"] + days * 86400 - now())
 
@@ -1427,8 +1427,28 @@ class Gem(Manager):
             older = [x for x in vers if x != v]
             if older:
                 notes.append("also installed: " + ", ".join(older[:5]))
-            res.append(pkg(n, v, latest.get(n), "gem", " · ".join(x for x in notes if x)))
+            p = pkg(n, v, latest.get(n), "gem", " · ".join(x for x in notes if x))
+            p["origin"] = origin
+            res.append(p)
+        self.uncount_rubys_own(job, res)
         return res
+
+    def uncount_rubys_own(self, job, rows):
+        """Gems that ship with Ruby also get newer with `brew upgrade ruby`, so a newer release of one only counts
+        as outdated when OSV knows a vulnerability in the installed version. The rest are marked `newer`: still
+        shown, and updatable from their row, but not in the outdated counts or an update-all."""
+        own = [p for p in rows if p["outdated"] and p["origin"] != "gem"]
+        if not own:
+            return
+        try:
+            data = http_json("https://api.osv.dev/v1/querybatch", {"queries": [
+                {"package": {"name": p["name"], "ecosystem": "RubyGems"}, "version": p["version"]} for p in own]}, timeout=90)
+        except Exception as e:
+            job.log("! OSV check of Ruby's own gems failed, counting them all as outdated: %s" % e)
+            return
+        for p, r in zip(own, data.get("results", [])):
+            if not any(not x["id"].startswith("MAL-") for x in r.get("vulns") or []):
+                p["outdated"], p["newer"] = False, True
 
     def released(self, job, p):
         data = http_json("https://rubygems.org/api/v1/versions/%s.json" % quote(p["name"]))
@@ -1450,7 +1470,9 @@ class Gem(Manager):
         if only and gate.get(only):
             raise RuntimeError("%s not updated: %s" % (only[1], gate[only]))
         for p in rows:
-            if ("gem", p["name"]) in gate or not p.get("outdated") or not p.get("latest"):
+            # `newer` rows (Ruby's own gems, nothing known wrong) only when asked for by name
+            wanted = p.get("outdated") or (only and p.get("newer"))
+            if ("gem", p["name"]) in gate or not wanted or not p.get("latest"):
                 continue
             if not (GEM_NAME.match(p["name"]) and GEM_VERSION.match(p["latest"])):
                 job.log("skip %r: not a gem name and version" % p["name"])
