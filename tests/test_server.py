@@ -54,6 +54,31 @@ class ProjectsRoot(unittest.TestCase):
             self.assertIsNone(server.clean_projects_root(bad), repr(bad))
 
 
+class LockfileParsing(unittest.TestCase):
+    """Lockfiles come from any project, so a hostile one must be skipped, never crash the scan."""
+
+    def test_hostile_package_locks_parse_to_nothing(self):
+        deep = '{"dependencies": ' + '{"x": {"version": "1", "dependencies": ' * 5000 + "{}" + "}}" * 5000 + "}"
+        for text in ("[]", '{"packages": {"node_modules/x": "1.0.0"}}', '{"packages": ["x"]}',
+                     '{"dependencies": {"x": 5}}', '{"packages": {"node_modules/x": {"version": 3}}}', deep, "not json"):
+            self.assertEqual(server.lock_deps("package-lock.json", text), [], text[:40])
+
+    def test_real_lockfiles_still_parse(self):
+        corpus = os.path.join(HERE, "fuzz-corpus", "lockfiles")
+        def deps(seed, fname):
+            with open(os.path.join(corpus, seed)) as f:
+                return server.lock_deps(fname, f.read())
+        self.assertEqual(deps("package-lock-v3.json", "package-lock.json"),
+                         [("@scope/pkg", "2.1.0"), ("b", "0.1.0"), ("left-pad", "1.3.0")])
+        self.assertEqual(deps("package-lock-v1.json", "package-lock.json"),
+                         [("debug", "2.6.9"), ("express", "4.18.2"), ("lodash", "4.17.21"), ("ms", "2.0.0")])
+        self.assertEqual(deps("yarn-v1.lock", "yarn.lock"), [("@babel/core", "7.23.2"), ("lodash", "4.17.21")])
+        self.assertEqual(deps("requirements.txt", "requirements.txt"), [("requests", "2.31.0"), ("urllib3", "2.0.7")])
+        self.assertEqual(deps("Cargo.lock", "Cargo.lock"), [("serde", "1.0.190")])
+        self.assertEqual(deps("uv.lock", "uv.lock"), [("requests", "2.31.0")])
+        self.assertEqual(deps("poetry.lock", "poetry.lock"), [("click", "8.1.7")])
+
+
 class Migration(unittest.TestCase):
     def setUp(self):
         self.state = server.STATE_DIR / "state.json"

@@ -92,3 +92,47 @@ jobs:
       # the system Python, which is what the LaunchAgent runs the service with
       - name: Unit and end-to-end tests
         run: /usr/bin/python3 -m unittest discover -s tests -v
+
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Atheris only ships Linux x86-64 wheels, for CPython 3.12-3.14
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install Atheris (hash-checked)
+        run: 'python -m pip install --require-hashes --only-binary :all: -r tests/requirements-fuzz.txt'
+
+      # coverage-guided; -timeout makes any input slower than 10 s (a regex blow-up) a failure
+      - name: Fuzz the lockfile parsers
+        run: |
+          mkdir -p "$RUNNER_TEMP/corpus" crashes
+          cp tests/fuzz-corpus/lockfiles/* "$RUNNER_TEMP/corpus/"
+          python tests/fuzz_lockfiles.py "$RUNNER_TEMP/corpus" -max_total_time=90 -timeout=10 -rss_limit_mb=2048 -artifact_prefix=crashes/
+
+      - name: Fuzz the projects-folder check
+        run: python tests/fuzz_projects_root.py -max_total_time=45 -timeout=10 -artifact_prefix=crashes/
+
+      - name: Keep crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-crashes
+          path: crashes/
+          retention-days: 14

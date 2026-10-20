@@ -12,6 +12,6 @@ ignore = [
 
 [lint.per-file-ignores]
 # tests only open http://127.0.0.1 URLs they build themselves
-"tests/*" = ["S310"]
+"tests/*" = ["S310", "S101"]  # S101: asserts are how tests check results (never run with -O)
 # the made-up data tables read better one record per line
 "demo.py" = ["E501"]

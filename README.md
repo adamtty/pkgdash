@@ -212,6 +212,11 @@ they never touch an installed pkgdash, and setup is never finished in them, so n
 updated. They cover the Host/Origin/token checks, settings validation, turned-off managers, the Socket
 token check, the settings migration and the demo.
 
+The lockfile parsers read files from other people's projects, so CI also **fuzzes** them with
+[Atheris](https://github.com/google/atheris) (coverage-guided; `tests/fuzz_lockfiles.py`, seeded from
+`tests/fuzz-corpus/`), along with the projects-folder check (`tests/fuzz_projects_root.py`). Atheris
+only runs on Linux x86-64; inputs it has found are kept as regression tests in `test_server.py`.
+
 ## License
 
 [MIT](LICENSE)

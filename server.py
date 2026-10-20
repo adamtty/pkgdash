@@ -163,7 +163,7 @@ def iter_json(text):
 def loads(text, default):
     try:
         return json.loads(text)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, RecursionError):  # RecursionError: absurdly nested JSON
         return default
 
 
@@ -1352,18 +1352,24 @@ def lock_deps(fname, text):
     """[(name, version)] pinned by a lockfile, dependencies included (registry packages only)."""
     res = set()
     if fname == "package-lock.json":
+        # lockfiles come from any project, so check every type rather than trust the shape
         data = loads(text, {})
-        for key, info in (data.get("packages") or {}).items():  # lockfile v2/v3
-            if "node_modules/" in key and not info.get("link") and info.get("version"):
-                res.add((info.get("name") or key.rsplit("node_modules/", 1)[1], info["version"]))
-
-        def walk(deps):  # lockfile v1
-            for n, info in (deps or {}).items():
-                if info.get("version"):
-                    res.add((n, info["version"]))
-                walk(info.get("dependencies"))
-        if not data.get("packages"):
-            walk(data.get("dependencies"))
+        data = data if isinstance(data, dict) else {}
+        packages = data.get("packages")
+        for key, info in (packages.items() if isinstance(packages, dict) else ()):  # lockfile v2/v3
+            if (isinstance(info, dict) and "node_modules/" in key and not info.get("link")
+                    and isinstance(info.get("version"), str) and info["version"]):
+                name = info.get("name")
+                res.add((name if isinstance(name, str) and name else key.rsplit("node_modules/", 1)[1], info["version"]))
+        if not packages:  # lockfile v1: nested "dependencies", walked without recursion
+            todo = [data.get("dependencies")]
+            while todo:
+                deps = todo.pop()
+                for n, info in (deps.items() if isinstance(deps, dict) else ()):
+                    if isinstance(info, dict):
+                        if isinstance(info.get("version"), str) and info["version"]:
+                            res.add((n, info["version"]))
+                        todo.append(info.get("dependencies"))
     elif fname == "yarn.lock":  # yarn 1 (`version "1.2.3"`) and yarn 2+ (`version: 1.2.3`)
         name = None
         for line in text.splitlines():
@@ -1558,7 +1564,12 @@ class Projects(Manager):
             except OSError:
                 continue
             rel = os.path.relpath(os.path.dirname(path), root)
-            out[(kind, rel)] = (eco, lock_deps(os.path.basename(path), text), path, f["mtime"])
+            try:
+                deps = lock_deps(os.path.basename(path), text)
+            except Exception as e:  # one unreadable lockfile mustn't stop the other projects' checks
+                print("projects: skipping %s: %s: %s" % (path, type(e).__name__, e), flush=True)
+                continue
+            out[(kind, rel)] = (eco, deps, path, f["mtime"])
         return out
 
     def scan(self, job):

@@ -1,0 +1,8 @@
+# yarn lockfile v1
+
+"@babel/core@^7.0.0", "@babel/core@^7.1.0":
+  version "7.23.2"
+  resolved "https://registry.yarnpkg.com/@babel/core/-/core-7.23.2.tgz"
+
+lodash@^4.17.21:
+  version "4.17.21"
