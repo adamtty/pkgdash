@@ -856,7 +856,7 @@ setupProjects.update = () => {
 
 function setupSocket() {
   return `<div class="form">
-    <div class="row col"><div><div>API token</div><div class="d">free at <a class="link" href="https://socket.dev" target="_blank" rel="noopener">socket.dev</a> → Settings → API Tokens. Kept in your login Keychain (item <code>pkgdash-socket-token</code>), never in pkgdash's own files</div></div>
+    <div class="row col"><div><div>API token</div><div class="d">free at <a class="link" href="https://socket.dev" target="_blank" rel="noopener">socket.dev</a> → Settings → API Tokens. It only needs the <code>packages:list</code> scope (the test below can't check scopes: a missing one shows up as an HTTP 403 in the next scan's log). Kept in your login Keychain (item <code>pkgdash-socket-token</code>), never in pkgdash's own files</div></div>
       <div class="pathrow"><input type="password" id="sockTok" placeholder="sktsec_…" spellcheck="false" autocomplete="off"><button class="btn sm" id="sockSave">&gt; save_&amp;_test</button></div>
       <div class="d" id="sockStatus">checking the Keychain…</div></div>
     ${settingRows(["socket_check"])}
