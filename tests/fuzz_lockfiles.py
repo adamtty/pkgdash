@@ -6,6 +6,8 @@ would otherwise stop the malware and CVE checks for every project.
 
     pip install --require-hashes -r tests/requirements-fuzz.txt
     python tests/fuzz_lockfiles.py tests/fuzz-corpus/lockfiles -max_total_time=60
+
+The seed lockfiles are named *.seed so dependency scanners don't take them for this project's own.
 """
 import os
 import sys
