@@ -5,6 +5,9 @@
 **One dashboard for every package manager on your Mac**: inventory, CVE audits, malware checks and
 updates for uv, npm, Homebrew, pip, Go, Cargo, Docker images, and the lockfiles of your own projects.
 
+[![CI](https://github.com/adamtty/pkgdash/actions/workflows/ci.yml/badge.svg)](https://github.com/adamtty/pkgdash/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/adamtty/pkgdash/actions/workflows/codeql.yml/badge.svg)](https://github.com/adamtty/pkgdash/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/adamtty/pkgdash/badge)](https://scorecard.dev/viewer/?uri=github.com/adamtty/pkgdash)
 ![macOS](https://img.shields.io/badge/macOS-13%2B-black?logo=apple)
 ![Python](https://img.shields.io/badge/python-3.9%20stdlib%20only-3776AB?logo=python&logoColor=white)
 ![Swift](https://img.shields.io/badge/menu%20bar-Swift%20%2F%20AppKit-F05138?logo=swift&logoColor=white)
@@ -159,9 +162,10 @@ menu bar app (which macOS asks you to allow) finds the lockfiles, skipping `node
 
 - **Scan:** every dependency against OSV's malware list (Socket gets a couple of lookups per scan, changed projects first).
 - **Audit:** every dependency's CVEs.
-- **fix lockfile** (npm, uv, cargo): the menu bar app runs `npm audit fix --package-lock-only --ignore-scripts`,
-  `uv lock --no-build --upgrade-package …` or `cargo update …`. These rewrite the lockfile only: nothing is
-  installed and no package code runs. Review it with `git diff` in the repo.
+- **fix lockfile** (npm, uv, cargo): the menu bar app shows what it's about to run and asks first, then runs
+  `npm audit fix --package-lock-only --ignore-scripts`, `uv lock --no-build --upgrade-package …` or
+  `cargo update …`. These rewrite the lockfile only: nothing is installed and no package code runs. Review
+  the result with `git diff` in the repo.
 - **ignore:** for deliberate targets and other people's code. Their CVEs and malware stop counting.
 
 Project counts stay out of the dashboard's headline totals. `install.sh` only rebuilds the menu bar app when
@@ -169,13 +173,44 @@ its source changes, since every rebuild makes macOS ask for folder access again.
 
 ## Security
 
-- Binds to loopback only and rejects foreign `Host`/`Origin` headers (DNS-rebinding guard).
-- Every POST needs a per-process token embedded in the page, so other websites can't trigger jobs.
-- Only fixed actions can run, never free-form commands; package and project names must match the last scan.
-- Nothing runs on a schedule until setup is done, and turned-off managers are never scanned or updated.
-- The menu bar app runs exactly three lockfile commands, and only on lockfiles inside the projects folder,
-  which must be inside your home folder (not `~/Library`).
+pkgdash handles data it doesn't control (package names and versions, advisories, Docker images, other
+people's projects) and drives tools that install software, so:
+
+- **The service** binds to loopback only, rejects foreign `Host`/`Origin` headers (DNS-rebinding guard), and
+  needs a per-process token for every POST, so web pages can't trigger anything. Only fixed actions run,
+  never free-form commands, and package and project names must match the last scan.
+- **Nothing runs on a schedule until setup is done**, and turned-off managers are never scanned or updated.
+- **The menu bar app** holds macOS permission to read your projects folder, so it's the part kept tightest:
+  - It asks before every lockfile fix, showing the project, the command and the exact binary. A fix
+    requested through the service by some other program on your Mac still needs you to click.
+  - It runs exactly three lockfile commands, by absolute path, with a fresh environment (nothing from the
+    editable LaunchAgent, such as `NODE_OPTIONS`, reaches them). Settings that would let a project's own
+    `.npmrc` or `.cargo/config.toml` pick a binary are pinned.
+  - It never runs `git` in a project, since a cloned repo's own config (`core.fsmonitor`, `diff.external`)
+    could make git run commands. It compares the lockfile itself instead.
+  - It's signed with the hardened runtime, so injected `DYLD_*` libraries are ignored, and the projects
+    folder must be inside your home folder (not `~/Library`).
+- **The dashboard** escapes everything it shows and only links advisory references that use `http(s)`.
+- Registry and OSV requests must be `https://`. Notifications pass package names to `osascript` as
+  arguments, never as script source.
 - The Socket.dev token lives only in the macOS Keychain.
+
+The repository is protected as well: every commit on `main` is signed and outside changes must pass CI
+(lint, `shellcheck`, `zizmor`, the Swift build and the tests), with CodeQL (Python, JavaScript, Swift and
+the workflows), a weekly [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/adamtty/pkgdash),
+SHA-pinned actions on StepSecurity Harden-Runner, Renovate with a 3-day release delay, and secret scanning
+with push protection. Found a problem? See [SECURITY.md](SECURITY.md) to report it privately.
+
+## Development
+
+```sh
+/usr/bin/python3 -m unittest discover -s tests -v
+```
+
+The tests start real servers from the checkout, each with a throwaway home folder and its own port, so
+they never touch an installed pkgdash, and setup is never finished in them, so nothing gets scanned or
+updated. They cover the Host/Origin/token checks, settings validation, turned-off managers, the Socket
+token check, the settings migration and the demo.
 
 ## License
 

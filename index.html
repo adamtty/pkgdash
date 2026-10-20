@@ -781,7 +781,7 @@ function socketLine() {
   const k = S.socket || {}, q = k.quota;
   if (!k.org) return `<div>socket.dev <code>not used yet</code></div>`;
   const refill = q && q.nextWindowRefresh ? ` · refills ${until(Date.parse(q.nextWindowRefresh) / 1000)}` : "";
-  return `<div>socket.dev org <code>${esc(k.org)}</code>${q ? ` · quota <code>${q.quota}/${q.maxQuota}</code> (as of ${ago(q.checked_at)})${refill}` : ""}</div>`;
+  return `<div>socket.dev org <code>${esc(k.org)}</code>${q ? ` · quota <code>${fmt(+q.quota || 0)}/${fmt(+q.maxQuota || 0)}</code> (as of ${ago(q.checked_at)})${refill}` : ""}</div>`;
 }
 function viewConfig() {
   $("#svc").innerHTML = `<div>url <code>http://${esc(S.addr)}</code></div><div>launchd <code>com.adam.pkgdash</code> (starts at login, auto-restarts)</div><div>state <code>${esc(S.state_dir)}</code></div><div>next runs: scan <code>${until(S.next.scan)}</code> · audit <code>${until(S.next.audit)}</code> · update <code>${until(S.next.update)}</code></div>${socketLine()}`;
@@ -948,7 +948,8 @@ async function openAdvisory(d) {
   $("#drawerTitle").innerHTML = `<span style="color:var(--red)">☠ ${esc(d.adv)}</span> · ${esc(d.pkg)} ${esc(d.ver)}`;
   pre.textContent = "loading…";
   $("#drawer").classList.add("open");
-  const link = (u, t) => `<a class="link" href="${esc(u)}" target="_blank" rel="noopener">${esc(t || u)}</a>`;
+  // advisory references are third-party data: only http(s) links, never javascript: or data: URLs
+  const link = (u, t) => /^https?:\/\//i.test(String(u)) ? `<a class="link" href="${esc(u)}" target="_blank" rel="noopener">${esc(t || u)}</a>` : esc(t || u);
   const found = `<b>Found:</b> ${esc(d.pkg)} ${esc(d.ver)} (${esc(where)}, ${esc(d.mid)})\n\n`;
   if (d.adv.startsWith("Socket")) {
     const u = socketUrl(d.mid, d.pkg, d.ver);

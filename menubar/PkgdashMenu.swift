@@ -106,69 +106,124 @@ final class App: NSObject, NSApplicationDelegate {
 
     var startedFixes = Set<String>()
 
+    /// Fixes are requested through the service, which any local program can talk to, so each one is
+    /// shown here first and only runs once you allow it: this app holds the projects-folder permission.
     func runProjectFixes() {
         let tasks = (state?["projects"] as? [String: Any])?["tasks"] as? [[String: Any]] ?? []
         for t in tasks {
             guard let id = t["id"] as? String, !startedFixes.contains(id) else { continue }
             startedFixes.insert(id)
+            let plan = fixPlan(t)
+            guard case .success(let fix) = plan else {
+                if case .failure(let why) = plan { syncQueue.async { _ = self.call("/api/projects/task", ["id": id, "rc": 2, "output": why.text]) } }
+                continue
+            }
+            guard confirm(fix) else {
+                syncQueue.async { _ = self.call("/api/projects/task", ["id": id, "rc": 1, "output": "declined in the menu bar app\n"]) }
+                continue
+            }
             syncQueue.async {
-                let (rc, out) = self.fixLockfile(t)
+                let (rc, out) = self.runFix(fix)
                 _ = self.call("/api/projects/task", ["id": id, "rc": Int(rc), "output": out])
                 self.syncProjects()  // send the new lockfile straight away
             }
         }
     }
 
+    struct Refusal: Error { let text: String }
+    struct Fix { let cmd: [String]; let tool: String; let dir: URL; let files: [URL]; let project: String }
+
     /// Only these commands, and none of them install anything or run package code: they rewrite the lockfile.
-    func fixLockfile(_ t: [String: Any]) -> (Int32, String) {
+    func fixPlan(_ t: [String: Any]) -> Result<Fix, Refusal> {
         let root = projectsRoot.path
-        guard let path = t["path"] as? String, let kind = t["kind"] as? String else { return (2, "bad request\n") }
+        guard let path = t["path"] as? String, let kind = t["kind"] as? String else { return .failure(Refusal(text: "bad request\n")) }
         let lock = URL(fileURLWithPath: path).standardized
         guard projectsOn, lock.path.hasPrefix(root + "/"), lockNames.contains(lock.lastPathComponent) else {
-            return (2, "refusing: \(path) isn't a lockfile in \(rootLabel)\n")
+            return .failure(Refusal(text: "refusing: \(path) isn't a lockfile in \(rootLabel)\n"))
         }
         let pkgs = (t["pkgs"] as? [String] ?? []).filter { $0.range(of: #"^[A-Za-z0-9@][A-Za-z0-9@/._-]*$"#, options: .regularExpression) != nil }
-        let cmd: [String]
+        let cmd: [String], manifest: String
         switch kind {
-        case "npm": cmd = ["npm", "audit", "fix", "--package-lock-only", "--ignore-scripts", "--no-fund"]
-        case "cargo": cmd = ["cargo", "update"] + pkgs
-        case "uv": cmd = ["uv", "lock", "--no-build"] + pkgs.flatMap { ["--upgrade-package", $0] }
-        default: return (2, "can't fix \(kind) lockfiles\n")
+        case "npm": cmd = ["npm", "audit", "fix", "--package-lock-only", "--ignore-scripts", "--no-fund"]; manifest = "package.json"
+        case "cargo": cmd = ["cargo", "update"] + pkgs; manifest = "Cargo.toml"
+        case "uv": cmd = ["uv", "lock", "--no-build"] + pkgs.flatMap { ["--upgrade-package", $0] }; manifest = "pyproject.toml"
+        default: return .failure(Refusal(text: "can't fix \(kind) lockfiles\n"))
         }
-        if kind != "npm" && pkgs.isEmpty { return (2, "nothing to upgrade\n") }
-        let dir = lock.deletingLastPathComponent().path
-        var (rc, log) = run(cmd, in: dir)
-        log = "$ " + cmd.joined(separator: " ") + "\n" + log
-        let (_, diff) = run(["git", "diff", "--stat", "--", lock.lastPathComponent, kind == "npm" ? "package.json" : (kind == "cargo" ? "Cargo.toml" : "pyproject.toml")], in: dir)
-        log += "\n# changed (git diff --stat):\n" + (diff.isEmpty ? "(nothing, or not a git repo)\n" : diff)
-        return (rc, log)
+        if kind != "npm" && pkgs.isEmpty { return .failure(Refusal(text: "nothing to upgrade\n")) }
+        guard let tool = which(cmd[0]) else { return .failure(Refusal(text: "\(cmd[0]) isn't installed\n")) }
+        let dir = lock.deletingLastPathComponent()
+        return .success(Fix(cmd: cmd, tool: tool, dir: dir, files: [lock, dir.appendingPathComponent(manifest)],
+                            project: dir.path.replacingOccurrences(of: root + "/", with: "")))
     }
 
-    func run(_ cmd: [String], in dir: String) -> (Int32, String) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = cmd
-        p.currentDirectoryURL = URL(fileURLWithPath: dir)
+    func confirm(_ f: Fix) -> Bool {
+        let a = NSAlert()
+        a.messageText = "Fix the lockfile of \(f.project)?"
+        a.informativeText = "pkgdash wants to run\n\n\(f.cmd.joined(separator: " "))\n\nin \(f.dir.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))\nusing \(f.tool)\n\nIt only rewrites the lockfile; nothing is installed. Allow it only if you just asked for this fix on the dashboard and you trust this project."
+        a.addButton(withTitle: "Run Fix")
+        a.addButton(withTitle: "Cancel")
+        a.alertStyle = .warning
+        NSApp.activate(ignoringOtherApps: true)
+        return a.runModal() == .alertFirstButtonReturn
+    }
+
+    func runFix(_ f: Fix) -> (Int32, String) {
+        // compared here rather than with `git diff`: git honours the repo's own config (core.fsmonitor,
+        // diff.external…), which would let a cloned project run commands with this app's permissions
+        let before = f.files.map { try? Data(contentsOf: $0) }
+        var (rc, log) = run(f.tool, Array(f.cmd.dropFirst()), in: f.dir.path)
+        log = "$ " + f.cmd.joined(separator: " ") + "   (" + f.tool + ")\n" + log + "\n# changed:\n"
+        for (url, old) in zip(f.files, before) {
+            let new = try? Data(contentsOf: url)
+            guard old != nil || new != nil else { continue }
+            log += "  \(url.lastPathComponent): " + (old == new ? "unchanged" : "\(changedLines(old, new)) lines changed") + "\n"
+        }
+        return (rc, log + "Review it with git diff in the repo.\n")
+    }
+
+    func changedLines(_ a: Data?, _ b: Data?) -> Int {
+        var count: [Substring: Int] = [:]
+        for l in String(decoding: a ?? Data(), as: UTF8.self).split(separator: "\n") { count[l, default: 0] += 1 }
+        var added = 0
+        for l in String(decoding: b ?? Data(), as: UTF8.self).split(separator: "\n") {
+            if let c = count[l], c > 0 { count[l] = c - 1 } else { added += 1 }
+        }
+        return max(added, count.values.reduce(0, +))
+    }
+
+    let toolDirs: [String] = {
         let home = NSHomeDirectory()
-        var env = ProcessInfo.processInfo.environment
-        env["PATH"] = ["\(home)/.local/bin", "\(home)/.local/share/fnm/aliases/default/bin", "/opt/homebrew/bin",
-                       "\(home)/.cargo/bin", "/usr/bin", "/bin"].joined(separator: ":")
-        env["npm_config_ignore_scripts"] = "true"
-        // the project's own config must not pick what runs or where packages come from:
-        // environment beats .cargo/config.toml, rust-toolchain.toml, .npmrc and uv's python downloads
-        env["CARGO_BUILD_RUSTC"] = "rustc"
-        env["CARGO_BUILD_RUSTC_WRAPPER"] = ""
-        env["CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER"] = ""
-        env["RUSTUP_TOOLCHAIN"] = "stable"
-        env["npm_config_registry"] = "https://registry.npmjs.org/"
-        env["UV_PYTHON_DOWNLOADS"] = "never"
-        env["NO_COLOR"] = "1"
-        p.environment = env
+        return ["\(home)/.local/bin", "\(home)/.local/share/fnm/aliases/default/bin", "/opt/homebrew/bin",
+                "\(home)/.cargo/bin", "/usr/bin", "/bin"]
+    }()
+
+    func which(_ name: String) -> String? {
+        toolDirs.map { $0 + "/" + name }.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    /// Runs one of the lockfile tools by absolute path with a fresh environment: nothing from launchd's
+    /// (user-editable) LaunchAgent, such as NODE_OPTIONS or DYLD_* variables, reaches it.
+    func run(_ tool: String, _ args: [String], in dir: String) -> (Int32, String) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: tool)
+        p.arguments = args
+        p.currentDirectoryURL = URL(fileURLWithPath: dir)
+        p.environment = [
+            "HOME": NSHomeDirectory(), "USER": NSUserName(), "LOGNAME": NSUserName(), "TMPDIR": NSTemporaryDirectory(),
+            "LANG": "en_US.UTF-8", "PATH": toolDirs.joined(separator: ":"), "NO_COLOR": "1",
+            // the project's own config must not pick what runs or where packages come from: environment
+            // beats .npmrc, .cargo/config.toml, rust-toolchain.toml and uv's python downloads
+            "npm_config_ignore_scripts": "true", "npm_config_registry": "https://registry.npmjs.org/",
+            "npm_config_git": "/usr/bin/git",
+            "CARGO_BUILD_RUSTC": "rustc", "CARGO_BUILD_RUSTC_WRAPPER": "", "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER": "",
+            "CARGO_NET_GIT_FETCH_WITH_CLI": "false", "RUSTUP_TOOLCHAIN": "stable",
+            "UV_PYTHON_DOWNLOADS": "never",
+        ]
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = pipe
         p.standardInput = FileHandle.nullDevice
-        do { try p.run() } catch { return (127, "can't run \(cmd[0]): \(error.localizedDescription)\n") }
+        do { try p.run() } catch { return (127, "can't run \(tool): \(error.localizedDescription)\n") }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
         return (p.terminationStatus, String(decoding: data, as: UTF8.self))

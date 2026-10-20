@@ -1,0 +1,17 @@
+# bug- and security-catching rules; the code keeps its own style (%-formatting, short names, long lines)
+line-length = 140
+
+[lint]
+select = ["E", "F", "W", "B", "PLE", "S"]
+ignore = [
+    "S603",  # flags every subprocess call; commands are argument lists, never a shell
+    "B905",  # zip(strict=) needs Python 3.10; the service runs on macOS's Python 3.9
+    "B007",  # unused loop variables: style
+    "E741",  # names like `l`: style
+]
+
+[lint.per-file-ignores]
+# tests only open http://127.0.0.1 URLs they build themselves
+"tests/*" = ["S310"]
+# the made-up data tables read better one record per line
+"demo.py" = ["E501"]

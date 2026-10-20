@@ -20,7 +20,7 @@ import server as S  # noqa: E402  (after HOME points at the temporary folder)
 
 NOW = time.time()
 DAY = 86400
-rng = random.Random(7)
+rng = random.Random(7)  # noqa: S311 - made-up demo numbers
 
 
 def pkgs(mid, rows, kind=""):

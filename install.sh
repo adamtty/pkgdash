@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Install (or reinstall) pkgdash: the dashboard service and its menu bar icon, as per-user
 # LaunchAgents that start at login.
 # Usage: ./install.sh            install / restart (re-run after editing any source file)
@@ -80,7 +80,9 @@ cat > "$APP/Contents/Info.plist" <<EOF
 </dict>
 </plist>
 EOF
-codesign --force --sign - "$APP" >/dev/null 2>&1
+# hardened runtime: macOS ignores DYLD_* variables (e.g. planted in the LaunchAgent), so no other code
+# can be loaded into the app that holds the projects-folder permission
+codesign --force --options runtime --sign - "$APP" >/dev/null 2>&1
 fi
 # KeepAlive only on crash, so "Quit Menu Icon" stays quit until next login
 cat > "$AGENTS/$MENU_LABEL.plist" <<EOF

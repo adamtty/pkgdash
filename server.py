@@ -168,11 +168,13 @@ def loads(text, default):
 
 
 def http_json(url, body=None, timeout=30):
-    req = urllib.request.Request(
+    if not url.startswith("https://"):  # registries and OSV only: never file: or plain http
+        raise ValueError("not an https URL: " + url[:80])
+    req = urllib.request.Request(  # noqa: S310 - https enforced above
         url, data=json.dumps(body).encode() if body is not None else None,
         headers={"User-Agent": "pkgdash/1.0 (local dashboard)",
                  "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
         return json.loads(r.read())
 
 
@@ -488,8 +490,13 @@ class Runner:
         recent = [e for e in store["events"] if e["manager"] == job.manager
                   and e["ts"] >= (job.rec["started"] or 0) and e["kind"] in ("new_pkg", "new_vuln", "job_failed")]
         for e in recent:
-            subprocess.run(["osascript", "-e", 'display notification %s with title "pkgdash"' %
-                            json.dumps(e["text"][:180])], env=ENV, capture_output=True)
+            notify("pkgdash", e["text"])
+
+
+def notify(title, text):
+    """A macOS notification. The text (package names etc.) goes in as an argument, never into the script."""
+    subprocess.run(["/usr/bin/osascript", "-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)",
+                    "-e", "end run", "--", title, text[:180]], env=ENV, capture_output=True)
 
 
 # ---------------------------------------------------------------- shared audit helpers
@@ -509,8 +516,7 @@ def record_flags(m, job, hits):
         store.add_event("malware", m.id, text % args)
         job.log("!!! " + text % args)
         if store["settings"].get("notify"):
-            subprocess.run(["osascript", "-e", 'display notification %s with title "pkgdash: malware"' %
-                            json.dumps((text % args)[:180])], env=ENV, capture_output=True)
+            notify("pkgdash: malware", text % args)
 
 
 def pip_audit(job, reqs, context):
@@ -582,7 +588,7 @@ def socket_api(token, path, body=None, timeout=30):
         "https://api.socket.dev/v0/" + path, data=json.dumps(body).encode() if body is not None else None,
         headers={"Authorization": "Bearer " + token, "User-Agent": "pkgdash/1.0 (local dashboard)",
                  "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 - fixed https://api.socket.dev/ prefix
         return r.read().decode()
 
 
@@ -594,7 +600,7 @@ def socket_token():
 
 
 def keychain_socket_token():
-    p = subprocess.run(["security", "find-generic-password", "-a", getpass.getuser(), "-s", SOCKET_ITEM, "-w"],
+    p = subprocess.run(["/usr/bin/security", "find-generic-password", "-a", getpass.getuser(), "-s", SOCKET_ITEM, "-w"],
                        capture_output=True, text=True, timeout=20)
     return p.stdout.strip() or None
 
@@ -607,14 +613,14 @@ def save_socket_token(token):
     user = getpass.getuser()
     if not SOCKET_TOKEN_RE.fullmatch(token) or not re.fullmatch(r"[A-Za-z0-9._-]+", user):
         raise ValueError("unexpected characters")
-    p = subprocess.run(["security", "-i"], input="add-generic-password -U -a %s -s %s -w %s\n" % (user, SOCKET_ITEM, token),
+    p = subprocess.run(["/usr/bin/security", "-i"], input="add-generic-password -U -a %s -s %s -w %s\n" % (user, SOCKET_ITEM, token),
                        capture_output=True, text=True, timeout=20)
     if keychain_socket_token() != token:
         raise OSError("couldn't save it to the Keychain: " + (p.stderr or p.stdout).strip()[:200])
 
 
 def delete_socket_token():
-    subprocess.run(["security", "delete-generic-password", "-a", getpass.getuser(), "-s", SOCKET_ITEM],
+    subprocess.run(["/usr/bin/security", "delete-generic-password", "-a", getpass.getuser(), "-s", SOCKET_ITEM],
                    capture_output=True, timeout=20)
 
 
@@ -1063,7 +1069,7 @@ class Brew(Manager):
                     if isinstance(a, str):
                         apps.append(a)
         for a in apps:
-            if subprocess.run(["pgrep", "-f", "/Applications/%s/" % a], capture_output=True).returncode == 0:
+            if subprocess.run(["/usr/bin/pgrep", "-f", "/Applications/%s/" % a], capture_output=True).returncode == 0:
                 return a
         return None
 
@@ -1448,7 +1454,7 @@ def projects_sync(body):
             path = valid(u.get("path"))
             if not path or path not in sync.get("mtimes", {}):
                 return {"error": "not in the manifest"}
-            name = hashlib.sha1(path.encode()).hexdigest()[:16] + ".lock"
+            name = hashlib.sha1(path.encode(), usedforsecurity=False).hexdigest()[:16] + ".lock"
             PROJECTS_DIR.mkdir(exist_ok=True)
             (PROJECTS_DIR / name).write_text(str(u.get("content") or ""))
             files[path] = {"mtime": sync["mtimes"][path], "file": name}
@@ -1682,8 +1688,8 @@ def image_files(job, image_id, timeout=900):
     """The wanted files as the image's final filesystem has them, read from `docker save` as it streams.
     Layers are overlaid in order, honouring whiteouts; no container is started and nothing in the image runs."""
     job.log("$ docker save " + image_id)
-    p = subprocess.Popen(["docker", "save", image_id], env=ENV, stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE, stdin=subprocess.DEVNULL)
+    p = subprocess.Popen(["docker", "save", image_id],  # noqa: S607 - docker is wherever ENV's PATH finds it
+                         env=ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL)
     timer = threading.Timer(timeout, p.kill)
     timer.start()
     layers, manifest = {}, None

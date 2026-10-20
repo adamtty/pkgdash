@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # renovate: datasource=pypi depName=ruff
+  RUFF_VERSION: 0.17.1
+  # renovate: datasource=pypi depName=shellcheck-py
+  SHELLCHECK_VERSION: 0.11.0.1
+  # renovate: datasource=pypi depName=zizmor
+  ZIZMOR_VERSION: 1.31.1
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: shellcheck
+        run: pipx run --spec "shellcheck-py==${SHELLCHECK_VERSION}" shellcheck install.sh
+
+      - name: zizmor (workflow security)
+        run: pipx run "zizmor==${ZIZMOR_VERSION}" --offline --min-severity low .github/workflows
+
+      - name: ruff
+        run: pipx run "ruff==${RUFF_VERSION}" check server.py demo.py tests/
+
+      - name: Python compiles
+        run: python3 -m py_compile server.py demo.py tests/test_server.py
+
+  build:
+    name: Build app
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      # macOS runners only support audit mode: connections are logged, not blocked
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # the same flags and signing as install.sh
+      - name: Compile menu bar app
+        run: |
+          swiftc -O -target arm64-apple-macos13 -framework AppKit -o "$RUNNER_TEMP/pkgdash" menubar/PkgdashMenu.swift
+          file "$RUNNER_TEMP/pkgdash"
+          codesign --force --options runtime --sign - "$RUNNER_TEMP/pkgdash"
+          codesign --verify --verbose=2 "$RUNNER_TEMP/pkgdash"
+
+  test:
+    name: Tests
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # the system Python, which is what the LaunchAgent runs the service with
+      - name: Unit and end-to-end tests
+        run: /usr/bin/python3 -m unittest discover -s tests -v
