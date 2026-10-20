@@ -260,6 +260,7 @@ td.ctx { max-width: 160px; word-break: break-word; }
 
 <script>
 const TOKEN = "__PKGDASH_TOKEN__";
+let token = TOKEN;  // replaced if the service restarts: see freshToken
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const SEV = { critical: 4, high: 3, medium: 2, low: 1, unknown: 0 };
@@ -326,12 +327,27 @@ const mgr = id => S.managers.find(m => m.id === id);
 const slug = m => m.label.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/_$/, "");
 function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("show"), 2200); }
 
+// the service makes a new token every time it starts (./install.sh, a crash, a reboot), so a page
+// opened before that gets 403 on every action: fetch the page again for the current token, like the
+// menu bar app does (\s in the pattern, so this line doesn't match it itself)
+async function freshToken() {
+  const m = (await (await fetch("/", { cache: "no-store" })).text()).match(/TOKEN\s=\s"([\w-]+)"/);
+  if (m) token = m[1];
+  return !!m;
+}
+async function post(path, body) {
+  const send = () => fetch(path, { method: "POST", headers: { "Content-Type": "application/json", "X-Pkgdash-Token": token }, body: JSON.stringify(body) });
+  const r = await send();
+  return r.status === 403 && await freshToken().catch(() => false) ? send() : r;
+}
 async function api(path, body) {
-  const opt = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json", "X-Pkgdash-Token": TOKEN }, body: JSON.stringify(body) };
-  const r = await fetch(path, opt);
+  const r = await (body === undefined ? fetch(path) : post(path, body));
+  if (r.status === 403) throw new Error("pkgdash refused that (403): reload the page");
   if (!r.ok) throw new Error(path + " → " + r.status);
   return r.json();
 }
+// actions that fail say so instead of doing nothing
+window.addEventListener("unhandledrejection", e => toast("failed: " + (e.reason && e.reason.message || e.reason)));
 
 const VERB = { scan: "scanning", audit: "auditing", update: "updating" };
 // keep the indeterminate animation's phase continuous across re-renders
@@ -869,7 +885,7 @@ function sockStatus() {
 }
 async function socketCall(body, ok) {
   $("#sockStatus").textContent = "asking Socket.dev…";
-  const r = await fetch("/api/socket", { method: "POST", headers: { "Content-Type": "application/json", "X-Pkgdash-Token": TOKEN }, body: JSON.stringify(body) });
+  const r = await post("/api/socket", body);
   const j = await r.json().catch(() => ({}));
   if (r.ok) { socketInfo = j; toast(ok); if ($("#sockTok")) $("#sockTok").value = ""; }
   sockStatus();
@@ -1007,7 +1023,7 @@ document.addEventListener("keydown", e => {
 window.addEventListener("hashchange", () => { ui.filter = ""; if (route()[0] !== "m") ui.mTab = "packages"; renderChrome(); render(true); if (route()[0] === "events" && S.unread) api("/api/events/read", {}); });
 
 async function loop() {
-  await refresh();
+  await refresh().catch(() => {});  // keep polling through a service restart
   await tailJob().catch(() => {});
   const busy = S && S.jobs.some(j => j.state === "running" || j.state === "queued");
   setTimeout(loop, busy || ui.drawerJob ? 1500 : 4000);
