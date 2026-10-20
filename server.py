@@ -1378,9 +1378,97 @@ class Cargo(Manager):
         return "cargo install --locked " + (only[1] if only else "for each crate")
 
 
+# each installed gem as [name, newest version, [every version installed], origin]; origin is "default" (part of
+# Ruby itself), "bundled" (ships with Ruby, in its own gem dir) or "gem" (installed with `gem install`)
+RUBY_GEMS = """
+require "json"
+own = File.join(RbConfig::CONFIG["rubylibprefix"], "gems", RbConfig::CONFIG["ruby_version"])
+puts JSON.generate(Gem::Specification.group_by(&:name).sort.map { |n, ss|
+  [n, ss.max_by(&:version).version.to_s, ss.map { |s| s.version.to_s }.uniq,
+   ss.any?(&:default_gem?) ? "default" : ss.any? { |s| s.base_dir == own } ? "bundled" : "gem"] })
+"""
+GEM_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+GEM_VERSION = re.compile(r"^[0-9][0-9A-Za-z.]*$")
+
+
+class Gem(Manager):
+    id, label, icon, color = "gem", "ruby gems", "rb", "amber"
+    desc = "Gems in Homebrew's Ruby (`gem install`), including the ones that ship with Ruby"
+    osv_eco = "RubyGems"
+
+    def ruby(self):
+        r = which("ruby")
+        return r if r and not r.startswith("/usr/bin/") else None  # macOS's own Ruby belongs to Apple
+
+    def gem(self):
+        return os.path.join(os.path.dirname(os.path.realpath(self.ruby())), "gem")  # the one that goes with it
+
+    def available(self):
+        return bool(self.ruby())
+
+    def gems(self, job):
+        rc, out = job.run([self.ruby(), "-e", RUBY_GEMS], quiet=True, timeout=120)
+        data = loads(out, None)
+        if rc != 0 or not isinstance(data, list):
+            raise RuntimeError("couldn't list the installed gems: " + out.strip()[-200:])
+        return [x for x in data if isinstance(x, list) and len(x) == 4]
+
+    def dep_tree(self, job):
+        return [(n, v, n) for n, _, vers, _ in self.gems(job) for v in vers]
+
+    def scan(self, job):
+        rc, out = job.run([self.gem(), "outdated"], quiet=True, timeout=300)
+        if rc != 0:
+            job.log("! gem outdated failed (exit %s); versions only" % rc)
+        latest = dict(re.findall(r"^(\S+) \(\S+ < (\S+)\)$", out, re.M))
+        res = []
+        for n, v, vers, origin in self.gems(job):
+            notes = [{"default": "default gem (part of Ruby)", "bundled": "bundled with Ruby"}.get(origin, "")]
+            older = [x for x in vers if x != v]
+            if older:
+                notes.append("also installed: " + ", ".join(older[:5]))
+            res.append(pkg(n, v, latest.get(n), "gem", " · ".join(x for x in notes if x)))
+        return res
+
+    def released(self, job, p):
+        data = http_json("https://rubygems.org/api/v1/versions/%s.json" % quote(p["name"]))
+        times = [parse_iso(x.get("created_at")) for x in (data if isinstance(data, list) else [])
+                 if isinstance(x, dict) and x.get("number") == p["latest"]]
+        return min((t for t in times if t), default=None)  # platform builds of one version come out together
+
+    def audit(self, job):
+        res = osv_audit(job, [("gems", "RubyGems", [(n, v) for n, v, _ in self.dep_tree(job)], "installed gems")])
+        for f in res:
+            f["context"] = f["pkg"]
+        return res
+
+    def update(self, job, only=None):
+        rows = [p for key, p in sorted(inv_pkgs(self.id).items()) if not only or key == only]
+        if only and not rows:
+            raise RuntimeError("%s isn't installed with gem" % only[1])
+        gate, bad = self.gate(job), []
+        if only and gate.get(only):
+            raise RuntimeError("%s not updated: %s" % (only[1], gate[only]))
+        for p in rows:
+            if ("gem", p["name"]) in gate or not p.get("outdated") or not p.get("latest"):
+                continue
+            if not (GEM_NAME.match(p["name"]) and GEM_VERSION.match(p["latest"])):
+                job.log("skip %r: not a gem name and version" % p["name"])
+                continue
+            # the exact version the scan saw (and the cooldown dated); --conservative leaves dependencies
+            # that already fit alone instead of pulling their newest releases too
+            if job.stream([self.gem(), "install", p["name"], "--version", p["latest"], "--conservative",
+                           "--no-document"], timeout=1800) != 0:
+                bad.append(p["name"])
+        if bad:
+            raise RuntimeError("gem install failed for: " + ", ".join(bad))
+        return "gem install " + (only[1] if only else "for each outdated gem")
+
+
 # lockfile name → (kind shown on the projects page, OSV ecosystem)
 LOCKFILES = {"package-lock.json": ("npm", "npm"), "yarn.lock": ("yarn", "npm"), "uv.lock": ("uv", "PyPI"),
-             "poetry.lock": ("poetry", "PyPI"), "Cargo.lock": ("cargo", "crates.io"), "requirements.txt": ("pip", "PyPI")}
+             "poetry.lock": ("poetry", "PyPI"), "Cargo.lock": ("cargo", "crates.io"), "requirements.txt": ("pip", "PyPI"),
+             "Gemfile.lock": ("bundler", "RubyGems")}
 
 
 def lock_deps(fname, text):
@@ -1423,6 +1511,16 @@ def lock_deps(fname, text):
             m = re.match(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*===?\s*([^\s;#,]+)", line)
             if m:
                 res.add(m.groups())
+    elif fname == "Gemfile.lock":  # GEM sections only: GIT and PATH sources aren't on rubygems.org
+        section = None
+        for line in text.splitlines():
+            if line and not line[0].isspace():
+                section = line.strip()
+            elif section == "GEM":
+                # "    nokogiri (1.16.0-arm64-darwin)": specs are indented 4, their dependencies 6
+                m = re.match(r"    ([A-Za-z0-9][A-Za-z0-9._-]*) \(([0-9][^)\s]*)\)\s*$", line)
+                if m:
+                    res.add((m.group(1), m.group(2).split("-", 1)[0]))  # drop the platform
     else:  # TOML [[package]] tables: uv.lock, poetry.lock, Cargo.lock
         for block in re.split(r"(?m)^\[\[package\]\]\s*$", text)[1:]:
             n = re.search(r'(?m)^name = "([^"]+)"', block)
@@ -1541,6 +1639,9 @@ class Projects(Manager):
         if not only:
             raise RuntimeError("projects are fixed one at a time, from their row")
         kind, rel = only
+        if kind == "bundler":
+            raise RuntimeError("pkgdash doesn't fix Gemfile.lock: Bundler would run the project's Gemfile, which is Ruby "
+                               "code. Run `bundle update <gem>` in %s yourself" % rel)
         if kind not in self.fixable:
             raise RuntimeError("pkgdash can't fix %s lockfiles yet; update %s by hand" % (kind, rel))
         proj = self.projects().get(only)
@@ -1709,8 +1810,10 @@ DOCKER_DIR = STATE_DIR / "docker"  # what each image contains, by image id (imag
 # the files inside an image that say what's installed: OS package databases, Python dist-info, node_modules
 DOCKER_WANT = re.compile(r"^(?:etc/os-release|usr/lib/os-release|var/lib/dpkg/status|var/lib/dpkg/status\.d/[^/]+"
                          r"|lib/apk/db/installed|.*/(?:site|dist)-packages/[^/]+\.dist-info/METADATA"
-                         r"|(?:.*/)?node_modules/(?:@[^/]+/)?[^/]+/package\.json)$")
+                         r"|(?:.*/)?node_modules/(?:@[^/]+/)?[^/]+/package\.json"
+                         r"|.*/specifications/(?:default/)?[^/]+\.gemspec)$")
 DOCKER_MAX_FILE = 16 << 20
+DOCKER_CACHE_VERSION = 2  # raised when image_packages learns a new kind of package (2: Ruby gems), so images get reread
 
 
 def layer_files(f):
@@ -1818,6 +1921,10 @@ def image_packages(fs):
             v = re.search(r"(?m)^Version: *(\S+)", text)
             if n and v:
                 res.add(("PyPI", n.group(1), v.group(1)))
+        elif path.endswith(".gemspec"):  # "specifications/nokogiri-1.16.0-x86_64-linux.gemspec"
+            m = re.match(r"(.+)-([0-9][^-]*)(?:-[^/]+)?\.gemspec$", os.path.basename(path))
+            if m:
+                res.add(("RubyGems", m.group(1), m.group(2)))
         elif path.endswith("package.json"):
             d = loads(text, {})
             if isinstance(d, dict) and isinstance(d.get("name"), str) and isinstance(d.get("version"), str):
@@ -1827,7 +1934,7 @@ def image_packages(fs):
 
 class Docker(Manager):
     id, label, icon, color = "docker", "docker images", "layers", "blue"
-    desc = ("Images in the local Docker engine (OrbStack / Docker Desktop): the OS packages, Python and npm "
+    desc = ("Images in the local Docker engine (OrbStack / Docker Desktop): the OS packages, Python, npm and Ruby "
             "packages inside each one, checked for malware and CVEs. Read from `docker save`, so no container is started")
     actions = ("scan", "audit")
     separate = True  # images aren't installed tools; kept out of the headline totals (malware still counts)
@@ -1870,14 +1977,14 @@ class Docker(Manager):
         """(distro label, [(ecosystem, name, version)]) for an image id, read once and cached."""
         path = DOCKER_DIR / (iid[7:] + ".json")
         cached = loads(path.read_text(), None) if path.exists() else None
-        if cached:
+        if cached and cached.get("v") == DOCKER_CACHE_VERSION:
             return cached["os"], [tuple(x) for x in cached["packages"]]
         job.log("# reading %s (%s)" % (ref, iid[7:19]))
         t0 = now()
         label, pkgs = image_packages(image_files(job, iid))
         job.log("  %s: %s, %d packages (%.0fs)" % (ref, label, len(pkgs), now() - t0))
         DOCKER_DIR.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"os": label, "packages": pkgs}))
+        path.write_text(json.dumps({"v": DOCKER_CACHE_VERSION, "os": label, "packages": pkgs}))
         return label, pkgs
 
     def scan(self, job):
@@ -1901,7 +2008,7 @@ class Docker(Manager):
             p["running"] = running
             res.append(p)
             for eco, n, v in pkgs:
-                if eco in ("PyPI", "npm"):  # OSV's malicious-packages list only covers registries
+                if eco in ("PyPI", "npm", "RubyGems"):  # OSV's malicious-packages list only covers registries
                     by_eco.setdefault(eco, []).append((n, v, ref, "installed"))
         live = {iid[7:] + ".json" for _, iid, _ in imgs}
         for f in DOCKER_DIR.glob("*.json") if DOCKER_DIR.exists() else []:
@@ -1986,7 +2093,7 @@ class Other(Manager):
         return res
 
 
-MANAGERS = [Uv(), Npm(), Brew(), Pip(), Go(), Cargo(), Projects(), Docker(), Other()]
+MANAGERS = [Uv(), Npm(), Brew(), Pip(), Go(), Cargo(), Gem(), Projects(), Docker(), Other()]
 MANAGER_BY_ID = {m.id: m for m in MANAGERS}
 runner = Runner()
 

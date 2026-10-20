@@ -56,7 +56,7 @@ final class App: NSObject, NSApplicationDelegate {
     }
     var rootLabel: String { projectsRoot.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~") }
 
-    let lockNames: Set<String> = ["package-lock.json", "yarn.lock", "uv.lock", "poetry.lock", "Cargo.lock", "requirements.txt"]
+    let lockNames: Set<String> = ["package-lock.json", "yarn.lock", "uv.lock", "poetry.lock", "Cargo.lock", "requirements.txt", "Gemfile.lock"]
     let skipDirs: Set<String> = ["node_modules", "Library", "venv", "env", "target", "dist", "build", "__pycache__", "Pods", "vendor"]
     let syncQueue = DispatchQueue(label: "pkgdash.projects")
     var lastSync = Date.distantPast
