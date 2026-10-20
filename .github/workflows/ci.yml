@@ -14,6 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # newest CPython that Atheris publishes wheels for (see the fuzzing job)
+  ATHERIS_PYTHON: "3.14"
   # renovate: datasource=pypi depName=ruff
   RUFF_VERSION: 0.17.1
   # renovate: datasource=pypi depName=shellcheck-py
@@ -111,10 +113,11 @@ jobs:
         with:
           persist-credentials: false
 
-      # Atheris only ships Linux x86-64 wheels, for CPython 3.12-3.14
+      # Atheris only ships Linux x86-64 wheels, for CPython 3.12-3.14 (3.1.0 has none for 3.15). The
+      # version is an expression so Renovate leaves it alone: raise it when an Atheris release adds wheels.
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.13"
+          python-version: ${{ env.ATHERIS_PYTHON }}
 
       - name: Install Atheris (hash-checked)
         run: 'python -m pip install --require-hashes --only-binary :all: -r tests/requirements-fuzz.txt'
