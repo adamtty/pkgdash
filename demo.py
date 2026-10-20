@@ -61,6 +61,8 @@ INVENTORY = {
                         row("urllib3", "1.26.15"), row("jinja2", "3.1.2"), row("certifi", "2024.8.30"), row("six", "1.16.0")], "python3.12"),
     "go": pkgs("go", [row("gopls", "v0.16.2"), row("golangci-lint", "v1.61.0"), row("staticcheck", "2024.1.1"), row("dlv", "v1.23.1")], "bin"),
     "cargo": pkgs("cargo", [row("cargo-edit", "0.13.0"), row("cargo-watch", "8.5.3"), row("tokei", "12.1.2"), row("bottom", "0.10.2")], "crate"),
+    "gem": pkgs("gem", [row("rubocop", "1.66.1", "1.67.0", 4), row("bundler", "2.5.21"), row("cocoapods", "1.15.2"),
+                        row("rake", "13.2.1"), row("json", "2.7.2")], "gem"),
     "other": pkgs("other", [row("bun", "1.1.30"), row("deno", "2.0.2"), row("ollama", "0.3.14")], "bin"),
 }
 
@@ -71,7 +73,8 @@ for p in INVENTORY["brew"]["packages"]:  # the apps are casks, not formulae
 PROJECTS = [("npm", "web/storefront", 642, "package-lock.json"), ("npm", "web/admin-panel", 588, "package-lock.json"),
             ("uv", "api/orders-service", 74, "uv.lock"), ("uv", "tools/report-builder", 31, "uv.lock"),
             ("cargo", "cli/logtail", 112, "Cargo.lock"), ("npm", "experiments/chat-widget", 391, "yarn.lock"),
-            ("uv", "scripts/backup", 9, "requirements.txt"), ("cargo", "games/tetris-rs", 48, "Cargo.lock")]
+            ("uv", "scripts/backup", 9, "requirements.txt"), ("cargo", "games/tetris-rs", 48, "Cargo.lock"),
+            ("bundler", "web/marketing-site", 87, "Gemfile.lock")]
 proj = []
 for kind, rel, deps, lock in PROJECTS:
     p = S.pkg(rel, "%d deps" % deps, None, "yarn" if lock == "yarn.lock" else kind, lock)
@@ -92,6 +95,7 @@ VULNS = {
             F("jinja2", "3.1.2", "CVE-2024-22195", "medium", "HTML attribute injection when passing user input as keys to xmlattr", "3.1.3", "python3.12")],
     "go": [F("golang.org/x/net", "v0.15.0", "CVE-2023-44487", "high", "HTTP/2 rapid reset can cause excessive work", "v0.17.0", "dlv")],
     "cargo": [],
+    "gem": [F("rexml", "3.3.8", "CVE-2024-49761", "high", "ReDoS when parsing a hex numeric character reference", "3.3.9", "rexml")],
     "other": [],
     "projects": [F("lodash", "4.17.15", "CVE-2020-8203", "high", "Prototype pollution in zipObjectDeep", "4.17.19", "web/admin-panel"),
                  F("minimist", "1.2.5", "CVE-2021-44906", "critical", "Prototype pollution", "1.2.6", "web/admin-panel"),

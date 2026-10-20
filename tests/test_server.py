@@ -79,6 +79,132 @@ class LockfileParsing(unittest.TestCase):
         self.assertEqual(deps("Cargo.lock", "Cargo.lock"), [("serde", "1.0.190")])
         self.assertEqual(deps("uv.lock", "uv.lock"), [("requests", "2.31.0")])
         self.assertEqual(deps("poetry.lock", "poetry.lock"), [("click", "8.1.7")])
+        # registry gems only (not GIT/PATH ones), platform builds folded into one version
+        self.assertEqual(deps("Gemfile.lock", "Gemfile.lock"),
+                         [("nokogiri", "1.16.0"), ("racc", "1.7.3"), ("rails", "7.1.3"), ("rspec-core", "3.13.0.pre.beta1")])
+
+    def test_hostile_gemfile_locks_parse_to_nothing(self):
+        for text in ("", "GEM\n  specs:\n    (1.0)\n", "GEM\n    -rf (1.0)\n", "GEM\n    x (../../etc)\n",
+                     "GEM\n    x (1.0:evil)\n", "GIT\n    x (1.0)\n", "GEM\n      deep (1.0)\n", "GEM\n    x ()\n"):
+            self.assertEqual(server.lock_deps("Gemfile.lock", text), [], repr(text))
+        self.assertEqual(server.lock_deps("Gemfile.lock", "GEM\r\n    x (1.0)\r\n"), [("x", "1.0")])
+
+
+class Gems(unittest.TestCase):
+    """The ruby gems manager, with a stand-in for running ruby and gem."""
+
+    class Job:
+        only, force, id = None, False, "t"
+
+        def __init__(self, outputs):
+            self.outputs, self.ran, self.logged = outputs, [], []
+
+        def log(self, text):
+            self.logged.append(text)
+
+        def run(self, cmd, cwd=None, timeout=0, quiet=False):
+            self.ran.append([str(c) for c in cmd])
+            return self.outputs["ruby" if cmd[1] == "-e" else "outdated"]
+
+        def stream(self, cmd, cwd=None, timeout=0):
+            self.ran.append([str(c) for c in cmd])
+            return 0
+
+    GEMS = json.dumps([["json", "2.18.0", ["2.18.0", "2.9.1"], "default"], ["rake", "13.3.0", ["13.3.0"], "bundled"],
+                       ["rubocop", "1.80.0", ["1.80.0"], "gem"], ["tidy", "1.0", ["1.0"], "gem"]])
+    OUTDATED = "json (2.18.0 < 2.19.9)\nrake (13.3.0 < 13.4.2)\nrubocop (1.80.0 < 1.81.2)\n"
+
+    def osv(self, url, body=None, timeout=0):
+        """OSV's querybatch, knowing one advisory: in json 2.18.0."""
+        self.osv_asked.append([q["package"]["name"] for q in body["queries"]])
+        return {"results": [{"vulns": [{"id": "GHSA-3m6g-2423-7cp3"}]} if q["package"]["name"] == "json" else {}
+                            for q in body["queries"]]}
+
+    def setUp(self):
+        self.osv_asked = []
+        self.orig_http = server.http_json
+        server.http_json = self.osv
+        self.addCleanup(setattr, server, "http_json", self.orig_http)
+        self.gem = server.Gem()
+        self.gem.ruby = lambda: "/opt/homebrew/bin/ruby"
+        self.gem.gem = lambda: "/opt/homebrew/Cellar/ruby/4.0.7/bin/gem"
+        self.job = self.Job({"ruby": (0, self.GEMS), "outdated": (0, self.OUTDATED)})
+
+    def test_scan(self):
+        rows = {r["name"]: r for r in self.gem.scan(self.job)}
+        self.assertEqual(sorted(rows), ["json", "rake", "rubocop", "tidy"])
+        self.assertEqual((rows["json"]["latest"], rows["rubocop"]["latest"], rows["tidy"]["latest"]), ("2.19.9", "1.81.2", None))
+        self.assertTrue(rows["rubocop"]["outdated"] and not rows["tidy"]["outdated"])
+        # Ruby's own gems: json has a known vulnerability so it counts; rake has none, so it's only `newer`
+        self.assertEqual(self.osv_asked, [["json", "rake"]])  # gems you installed aren't asked about
+        self.assertTrue(rows["json"]["outdated"])
+        self.assertEqual((rows["rake"]["outdated"], rows["rake"].get("newer"), rows["rake"]["latest"]), (False, True, "13.4.2"))
+        self.assertIn("default gem", rows["json"]["note"])
+        self.assertIn("also installed: 2.9.1", rows["json"]["note"])
+
+    def test_osv_unreachable_counts_rubys_own_gems_as_outdated(self):
+        def down(*a, **k):
+            raise OSError("no network")
+        server.http_json = down
+        rows = {r["name"]: r for r in self.gem.scan(self.job)}
+        self.assertTrue(rows["rake"]["outdated"] and not rows["rake"].get("newer"))
+
+    def test_every_installed_version_is_checked(self):
+        self.assertIn(("json", "2.9.1", "json"), self.gem.dep_tree(self.job))
+
+    def test_ruby_that_fails_is_an_error_not_an_empty_list(self):
+        self.job.outputs["ruby"] = (1, "ruby: cannot load such file")
+        with self.assertRaises(RuntimeError):
+            self.gem.gems(self.job)
+
+    def test_macos_ruby_is_left_alone(self):
+        orig = server.which
+        server.which = lambda name: "/usr/bin/ruby"
+        try:
+            self.assertFalse(server.Gem().available())
+        finally:
+            server.which = orig
+
+    def installs(self, only=None):
+        inv = {("gem", r["name"]): r for r in self.gem.scan(self.job)}
+        inv[("gem", "rubocop")]["latest"] = "1.81.2 --source=https://evil.example"
+        orig_inv, orig_gate = server.inv_pkgs, server.Manager.gate
+        server.inv_pkgs = lambda mid: inv
+        server.Manager.gate = lambda self, job: {}
+        try:
+            self.job.ran.clear()
+            self.gem.update(self.job, only)
+        finally:
+            server.inv_pkgs, server.Manager.gate = orig_inv, orig_gate
+        return [c[2:5] for c in self.job.ran if "install" in c]
+
+    def test_update_installs_the_scanned_version(self):
+        self.assertEqual(self.installs(), [["json", "--version", "2.19.9"]])  # rake is only `newer`; rubocop's odd "version" is skipped
+        cmd = [c for c in self.job.ran if "install" in c][0]
+        self.assertEqual(cmd, ["/opt/homebrew/Cellar/ruby/4.0.7/bin/gem", "install", "json", "--version", "2.19.9",
+                               "--conservative", "--no-document"])
+
+    def test_a_newer_gem_updates_when_asked_for_by_name(self):
+        self.assertEqual(self.installs(("gem", "rake")), [["rake", "--version", "13.4.2"]])
+
+    def test_newer_gems_still_wait_out_the_cooldown(self):
+        p = {"newer": True, "outdated": False, "latest": "13.4.2", "released": server.now() - 3600}
+        self.addCleanup(server.store["settings"].__setitem__, "cooldown_days", server.store["settings"].get("cooldown_days"))
+        server.store["settings"]["cooldown_days"] = 5
+        self.assertGreater(server.cooldown_left(p), 0)
+
+
+class DockerGems(unittest.TestCase):
+    def test_gems_in_an_image(self):
+        files = {"usr/local/bundle/specifications/nokogiri-1.16.0-x86_64-linux.gemspec": b"",
+                 "usr/local/lib/ruby/gems/3.3.0/specifications/default/json-2.7.1.gemspec": b"",
+                 "usr/local/bundle/specifications/net-http-0.4.1.gemspec": b"",
+                 "usr/local/bundle/specifications/not a gemspec.gemspec": b""}
+        self.assertTrue(all(server.DOCKER_WANT.match(p) for p in files))
+        self.assertFalse(server.DOCKER_WANT.match("app/mygem.gemspec"))
+        _, pkgs = server.image_packages(files)
+        self.assertEqual(pkgs, [("RubyGems", "json", "2.7.1"), ("RubyGems", "net-http", "0.4.1"),
+                                ("RubyGems", "nokogiri", "1.16.0")])
 
 
 class Migration(unittest.TestCase):

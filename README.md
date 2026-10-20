@@ -3,7 +3,7 @@
 # `>_ pkgdash_`
 
 **One dashboard for every package manager on your Mac**: inventory, CVE audits, malware checks and
-updates for uv, npm, Homebrew, pip, Go, Cargo, Docker images, and the lockfiles of your own projects.
+updates for uv, npm, Homebrew, pip, Go, Cargo, Ruby gems, Docker images, and the lockfiles of your own projects.
 
 [![CI](https://github.com/adamtty/pkgdash/actions/workflows/ci.yml/badge.svg)](https://github.com/adamtty/pkgdash/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/adamtty/pkgdash/actions/workflows/codeql.yml/badge.svg)](https://github.com/adamtty/pkgdash/actions/workflows/codeql.yml)
@@ -111,11 +111,12 @@ screenshots are made.
 | pip | Homebrew Pythons + `--user` installs in macOS python; flags strays | `pip-audit` | disabled by design (use uv) |
 | go | `go version -m` + `go list -m @latest` | `govulncheck -mode=binary` | `go install <pkg>@latest` (rebuilds with current Go) |
 | cargo | `cargo install --list` + crates.io | OSV (top-level crate only) | `cargo install --locked` |
-| docker | `docker save` per image (cached by image id; nothing runs) | OSV, incl. Debian/Ubuntu/Alpine | — |
+| gem | Homebrew Ruby's gems + `gem outdated`; the ones that ship with Ruby only count as outdated when OSV knows a vulnerability in them | OSV, every installed version | `gem install <gem> --version <scanned> --conservative` |
+| docker | `docker save` per image (cached by image id; nothing runs): OS packages, Python, npm and Ruby gems | OSV, incl. Debian/Ubuntu/Alpine | — |
 | other | ~/.local/bin, /usr/local/bin, extra managers | — | — |
 
 Single packages: each outdated package has its own `> update` button (`brew upgrade --formula/--cask <name>`,
-`uv tool upgrade <name>`, `npm i -g <name>@latest`, `go install …@latest`, `cargo install --locked <name>`),
+`uv tool upgrade <name>`, `npm i -g <name>@latest`, `go install …@latest`, `cargo install --locked <name>`, `gem install <name> --version …`),
 followed by a re-scan. The server only accepts names its last scan found.
 
 ### Supply-chain guards
@@ -124,9 +125,9 @@ followed by a re-scan. The server only accepts names its last scan found.
 <summary><b>Cooldown</b> (<code>cooldown_days</code>, default 5)</summary>
 
 Updates wait until a release is that old, since hijacked releases are usually caught and pulled within days.
-uv uses `--exclude-newer` and npm `--before`, which also cover their dependencies; brew/go/cargo skip packages
-still cooling (cargo is pinned to the scanned version). Release dates come from PyPI, the npm registry, the
-Go proxy and crates.io; Homebrew has none, so formulae use the build time of the version's first bottle on
+uv uses `--exclude-newer` and npm `--before`, which also cover their dependencies; brew/go/cargo/gem skip packages
+still cooling (cargo and gem are pinned to the scanned version). Release dates come from PyPI, the npm registry, the
+Go proxy, crates.io and rubygems.org; Homebrew has none, so formulae use the build time of the version's first bottle on
 ghcr.io, and casks (no bottles) start the clock when a scan first sees the version. pip packages show no
 cooldown, since pkgdash doesn't update them.
 </details>
@@ -157,7 +158,7 @@ free plan's quota is small (500, 100 per lookup); the settings page shows what's
 ### Projects
 
 The **projects** page checks the lockfiles of every project in the folder chosen on the setup page
-(`package-lock.json`, `yarn.lock`, `uv.lock`, `poetry.lock`, `Cargo.lock`, pinned `requirements.txt`). It
+(`package-lock.json`, `yarn.lock`, `uv.lock`, `poetry.lock`, `Cargo.lock`, `Gemfile.lock`, pinned `requirements.txt`). It
 must be inside your home folder. launchd agents can't read protected folders like `~/Documents`, so the
 menu bar app (which macOS asks you to allow) finds the lockfiles, skipping `node_modules`/`.git`/venvs/
 `target`, and sends new or changed ones to the service hourly or when a scan asks; copies live in
@@ -168,7 +169,8 @@ menu bar app (which macOS asks you to allow) finds the lockfiles, skipping `node
 - **fix lockfile** (npm, uv, cargo): the menu bar app shows what it's about to run and asks first, then runs
   `npm audit fix --package-lock-only --ignore-scripts`, `uv lock --no-build --upgrade-package …` or
   `cargo update …`. These rewrite the lockfile only: nothing is installed and no package code runs. Review
-  the result with `git diff` in the repo.
+  the result with `git diff` in the repo. `Gemfile.lock` isn't fixed: Bundler would run the project's
+  `Gemfile`, which is Ruby code, so run `bundle update <gem>` there yourself.
 - **ignore:** for deliberate targets and other people's code. Their CVEs and malware stop counting.
 
 Project counts stay out of the dashboard's headline totals. `install.sh` only rebuilds the menu bar app when
