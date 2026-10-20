@@ -126,7 +126,9 @@ followed by a re-scan. The server only accepts names its last scan found.
 Updates wait until a release is that old, since hijacked releases are usually caught and pulled within days.
 uv uses `--exclude-newer` and npm `--before`, which also cover their dependencies; brew/go/cargo skip packages
 still cooling (cargo is pinned to the scanned version). Release dates come from PyPI, the npm registry, the
-Go proxy and crates.io; Homebrew has none, so its clock starts when a scan first sees the version.
+Go proxy and crates.io; Homebrew has none, so formulae use the build time of the version's first bottle on
+ghcr.io, and casks (no bottles) start the clock when a scan first sees the version. pip packages show no
+cooldown, since pkgdash doesn't update them.
 </details>
 
 <details>

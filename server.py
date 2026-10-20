@@ -167,15 +167,22 @@ def loads(text, default):
         return default
 
 
-def http_json(url, body=None, timeout=30):
+def http_json(url, body=None, timeout=30, headers=None):
     if not url.startswith("https://"):  # registries and OSV only: never file: or plain http
         raise ValueError("not an https URL: " + url[:80])
     req = urllib.request.Request(  # noqa: S310 - https enforced above
         url, data=json.dumps(body).encode() if body is not None else None,
         headers={"User-Agent": "pkgdash/1.0 (local dashboard)",
-                 "Content-Type": "application/json"})
+                 "Content-Type": "application/json", **(headers or {})})
     with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
         return json.loads(r.read())
+
+
+def pypi_released(name, version):
+    """Upload time of a PyPI release (its first file), if PyPI has it."""
+    data = http_json("https://pypi.org/pypi/%s/%s/json" % (quote(name), quote(version)))
+    times = [t for t in (parse_iso(u.get("upload_time_iso_8601")) for u in data.get("urls", [])) if t]
+    return min(times) if times else None
 
 
 # ---------------------------------------------------------------- store
@@ -798,9 +805,7 @@ class Uv(Manager):
         return [(*l.split("==", 1), tool) for tool, reqs in self.freeze(job).items() for l in reqs]
 
     def released(self, job, p):
-        data = http_json("https://pypi.org/pypi/%s/%s/json" % (p["name"], p["latest"]))
-        times = [t for t in (parse_iso(u.get("upload_time_iso_8601")) for u in data.get("urls", [])) if t]
-        return min(times) if times else None
+        return pypi_released(p["name"], p["latest"])
 
     def receipt(self, tool):
         """Requirements from uv-receipt.toml (no tomllib on 3.9): [{name, specifier|directory|git|...}]."""
@@ -1018,6 +1023,7 @@ class Npm(Manager):
 class Brew(Manager):
     id, label, icon, color = "brew", "homebrew", "beer", "amber"
     desc = "Homebrew formulae and casks (vulns via brew-vulns / OSV)"
+    bottle_repo = {}  # formula name → its ghcr.io repo, for release dates (filled by each scan)
 
     def available(self):
         return bool(which("brew"))
@@ -1035,6 +1041,7 @@ class Brew(Manager):
         o = self.outdated(job)
         lf = {x["name"]: x["current_version"] for x in o.get("formulae", [])}
         lc = {x["name"]: x["current_version"] for x in o.get("casks", [])}
+        self.bottle_repos(job, sorted(lf))
         res = []
         for line in f.splitlines():
             parts = line.split()
@@ -1046,6 +1053,31 @@ class Brew(Manager):
             if parts:
                 res.append(pkg(parts[0], parts[-1], lc.get(parts[0]), "cask"))
         return res
+
+    def bottle_repos(self, job, names):
+        """Where each outdated homebrew/core formula's bottles live on ghcr.io ("homebrew/core/python/3.13")."""
+        self.bottle_repo = {}
+        if not names:
+            return
+        _, out = job.run(["brew", "info", "--json=v2", "--formula"] + names, quiet=True, timeout=300)
+        for x in loads(out, {}).get("formulae", []):
+            files = ((x.get("bottle") or {}).get("stable") or {}).get("files") or {}
+            url = next(iter(files.values()), {}).get("url", "")
+            m = re.match(r"https://ghcr\.io/v2/(homebrew/core/[\w.+@/-]+)/blobs/", url)
+            if m:
+                self.bottle_repo[x["name"]] = m.group(1)
+
+    def released(self, job, p):
+        """Homebrew has no release dates, but a core bottle's manifest says when it was built. The plain version
+        tag is the first build (rebuilds are tagged -1, -2, ...), which comes soon after upstream's release.
+        Casks and tap formulae have none, so their cooldown counts from when a scan first saw them."""
+        repo = self.bottle_repo.get(p["name"]) if p["kind"] == "formula" else None
+        if not repo:
+            return None
+        # "QQ==" is ghcr.io's anonymous token, enough for public images like Homebrew's bottles
+        data = http_json("https://ghcr.io/v2/%s/manifests/%s" % (repo, quote(p["latest"])),
+                         headers={"Authorization": "Bearer QQ==", "Accept": "application/vnd.oci.image.index.v1+json"})
+        return parse_iso((data.get("annotations") or {}).get("org.opencontainers.image.created"))
 
     def audit(self, job):
         _, out = job.run(["brew", "vulns", "--json", "-m", "0"], quiet=True, timeout=1800)
@@ -1080,8 +1112,8 @@ class Brew(Manager):
                 raise RuntimeError("%s not updated: %s" % (only[1], gate[only]))
             return self.update_one(job, *only)
         job.stream(["brew", "update"], timeout=900)
-        # Homebrew has no release dates, so the cooldown counts from when a scan first saw each
-        # version. Only upgrade what the scan saw (a version that appeared since then waits).
+        # the cooldown only knows about versions a scan has dated (bottle build time, or when the scan
+        # first saw it), so only upgrade what the scan saw: a version that appeared since then waits.
         inv, o = inv_pkgs(self.id), self.outdated(job)
 
         def ready(kind, items):
@@ -1143,6 +1175,9 @@ class Pip(Manager):
 
     def available(self):
         return bool(self.pythons())
+
+    def released(self, job, p):
+        return pypi_released(p["name"], p["latest"])
 
     def scan(self, job):
         res = []
@@ -2007,9 +2042,10 @@ def state_payload():
             ign = m.ignored()
             fs = [f for f in fs if f["context"] not in ign]
             mal = [h for h in mal if h["context"] not in ign]
+        updatable = "update" in m.actions and not m.hold  # pip: shown, never updated, so no cooldown either
         d.update(malware=[h for h in mal if h["where"] == "installed"], osv=bool(m.osv_eco),
                  malware_checked_at=(store["malware"].get(m.id) or {}).get("checked_at"),
-                 cooling=sum(cooldown_left(p) > 0 and not p.get("blocked") for p in pk),
+                 cooling=sum(updatable and cooldown_left(p) > 0 and not p.get("blocked") for p in pk),
                  blocked=sum(bool(p.get("blocked")) for p in pk))
         totals["malware"] += len(d["malware"])
         d.update(count=len(pk), outdated=sum(p["outdated"] for p in pk), vulns=len(fs),
