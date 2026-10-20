@@ -1,0 +1,1018 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pkgdash</title>
+<link rel="icon" id="favicon" type="image/svg+xml" href="">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #050807;
+  --panel: rgba(9, 18, 15, .78);
+  --panel-solid: #08110e;
+  --line: rgba(110, 231, 183, .16);
+  --line-strong: rgba(110, 231, 183, .38);
+  --text: #c9f5e0;
+  --dim: #6f9c88;
+  --faint: #3d5e50;
+  --green: #6ee7b7;
+  --blue: #5ccbe8;
+  --amber: #f0a742;
+  --red: #ff5f5f;
+  --muted: #8aa79a;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--text); font: 13px/1.5 var(--mono);
+  -webkit-font-smoothing: antialiased; overflow: hidden;
+}
+button, input, select { font: inherit; color: inherit; }
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+::selection { background: rgba(110, 231, 183, .3); }
+
+.app { display: grid; grid-template-columns: 250px 1fr; height: 100vh; }
+
+/* ---------- sidebar ---------- */
+.side { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: rgba(4, 9, 7, .9); }
+.brand { height: 64px; display: flex; align-items: center; padding: 0 22px; border-bottom: 1px solid var(--line);
+  font-size: 18px; font-weight: 500; color: var(--green); text-shadow: 0 0 10px rgba(110, 231, 183, .45); white-space: nowrap; overflow: hidden; }
+.brand .cur { animation: blink 1.1s steps(1) infinite; }
+.brand { gap: 11px; }
+.brand .mark { width: 28px; height: 28px; flex: none; filter: drop-shadow(0 0 6px rgba(110, 231, 183, .35)); }
+.brand .word { font-size: 20px; font-weight: 600; letter-spacing: .02em; }
+.brand .host { margin-left: auto; padding-left: 8px; font-size: 11px; font-weight: 400; color: var(--dim); text-shadow: none; overflow: hidden; text-overflow: ellipsis; }
+.brand .host.off { color: var(--red); }
+@keyframes blink { 50% { opacity: 0; } }
+nav { flex: 1; overflow-y: auto; padding: 14px 12px; }
+.nav-item { display: flex; align-items: center; gap: 12px; padding: 9px 12px; margin-bottom: 4px; border: 1px solid transparent;
+  border-radius: 3px; color: var(--text); opacity: .82; cursor: pointer; text-decoration: none; }
+.nav-item:hover { opacity: 1; background: rgba(110, 231, 183, .04); text-decoration: none; }
+.nav-item.active { opacity: 1; border-color: var(--line-strong); background: rgba(110, 231, 183, .08); color: var(--green);
+  box-shadow: 0 0 14px rgba(110, 231, 183, .08) inset; }
+.nav-item svg { width: 16px; height: 16px; flex: none; }
+.nav-item .lbl { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-count { font-size: 11px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 2px; color: var(--green); }
+.nav-count.red { color: var(--red); border-color: rgba(255, 95, 95, .5); box-shadow: 0 0 8px rgba(255, 95, 95, .25); }
+.nav-sec { color: var(--dim); font-size: 11px; letter-spacing: .08em; padding: 16px 12px 8px; }
+.me { border-top: 1px solid var(--line); padding: 16px 20px; display: flex; gap: 12px; align-items: center; }
+.avatar { width: 38px; height: 38px; border: 1px solid var(--line-strong); display: grid; place-items: center; color: var(--green); font-size: 13px; }
+.me .who { color: var(--text); }
+.me .addr { color: var(--dim); font-size: 11px; }
+
+/* ---------- main ---------- */
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.top { height: 64px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 24px; border-bottom: 1px solid var(--line); background: rgba(4, 9, 7, .9); }
+.menu-btn { display: none; background: none; border: 1px solid var(--line); padding: 6px 8px; cursor: pointer; }
+.search { flex: 0 1 440px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--line-strong); padding: 7px 10px; background: rgba(0, 0, 0, .3); }
+.search .pr { color: var(--faint); }
+.search input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--text); }
+.search input::placeholder { color: var(--faint); }
+.kbd { font-size: 11px; border: 1px solid var(--line-strong); padding: 0 6px; color: var(--green); }
+.top .grow { flex: 1; }
+.bell { position: relative; background: none; border: 0; cursor: pointer; color: var(--green); padding: 6px; }
+.bell svg { width: 20px; height: 20px; }
+.bell .dot { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--red); box-shadow: 0 0 8px var(--red); display: none; }
+.bell.on .dot { display: block; }
+
+.content { flex: 1; overflow-y: auto; padding: 28px 28px 60px;
+  background-image: linear-gradient(rgba(110, 231, 183, .03) 1px, transparent 1px), linear-gradient(90deg, rgba(110, 231, 183, .03) 1px, transparent 1px);
+  background-size: 34px 34px; }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 26px; }
+h1 { margin: 0 0 6px; font-size: 22px; font-weight: 500; color: var(--green); letter-spacing: .04em; text-shadow: 0 0 12px rgba(110, 231, 183, .35); }
+.sub { color: var(--dim); }
+.sub b { color: var(--text); font-weight: 400; }
+.actions { display: flex; gap: 12px; flex-wrap: wrap; }
+
+.btn { border: 1px solid var(--line-strong); background: rgba(0, 0, 0, .35); color: var(--text); padding: 9px 16px; cursor: pointer; letter-spacing: .04em; white-space: nowrap; }
+.btn:hover:not(:disabled) { border-color: var(--green); color: var(--green); }
+.btn.primary { background: rgba(110, 231, 183, .16); border-color: var(--green); color: var(--green); box-shadow: 0 0 18px rgba(110, 231, 183, .22), inset 0 0 10px rgba(110, 231, 183, .1); }
+.btn.primary:hover:not(:disabled) { background: rgba(110, 231, 183, .26); }
+.btn.warn { border-color: rgba(240, 167, 66, .5); color: var(--amber); }
+.btn.warn:hover:not(:disabled) { border-color: var(--amber); color: var(--amber); box-shadow: 0 0 12px rgba(240, 167, 66, .2); }
+.btn.sm { padding: 4px 10px; font-size: 12px; }
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.btn.busy, .btn.busy:disabled { opacity: .9; color: var(--amber); border-color: rgba(240, 167, 66, .5); cursor: progress; }
+
+/* ---------- stat cards ---------- */
+.grid { display: grid; gap: 22px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); margin-bottom: 30px; }
+.card { --c: var(--green); --cr: 110, 231, 183; position: relative; border: 1px solid rgba(var(--cr), .28); border-left: 3px solid var(--c);
+  background: var(--panel); padding: 20px 22px; box-shadow: inset 0 0 40px rgba(var(--cr), .04); min-width: 0; }
+.card.blue { --c: var(--blue); --cr: 92, 203, 232; }
+.card.amber { --c: var(--amber); --cr: 240, 167, 66; }
+.card.red { --c: var(--red); --cr: 255, 95, 95; }
+.card.muted { --c: var(--muted); --cr: 138, 167, 154; }
+.card-h { display: flex; justify-content: space-between; align-items: center; color: var(--c); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; }
+.card-h svg { width: 20px; height: 20px; opacity: .9; }
+.big { font-size: 42px; line-height: 1.1; margin: 18px 0 14px; color: var(--c); text-shadow: 0 0 14px rgba(var(--cr), .45); }
+.big small { font-size: 22px; opacity: .55; }
+.meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--dim); font-size: 12px; }
+.tag { --tr: 110, 231, 183; display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; border: 1px solid rgba(var(--tr), .55);
+  background: rgba(var(--tr), .1); color: rgb(var(--tr)); box-shadow: 0 0 10px rgba(var(--tr), .2); font-size: 12px; white-space: nowrap; }
+.tag.blue { --tr: 92, 203, 232; } .tag.amber { --tr: 240, 167, 66; } .tag.red { --tr: 255, 95, 95; } .tag.muted { --tr: 138, 167, 154; box-shadow: none; }
+.grid.stats { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.mgr-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.card a.title { color: inherit; }
+.card.click { cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.card.click:hover { border-color: rgba(var(--cr), .6); border-left-color: var(--c); box-shadow: 0 0 22px rgba(var(--cr), .14); }
+.busy { color: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+.prog { position: relative; height: 4px; margin-top: 16px; background: rgba(var(--cr), .12); overflow: hidden; }
+.prog i { position: absolute; top: 0; bottom: 0; left: 0; background: var(--c); box-shadow: 0 0 10px var(--c); }
+.prog.indet i { width: 30%; animation: indet 1.4s ease-in-out infinite; }
+.prog.queued i { opacity: .35; }
+@keyframes indet { from { left: -30%; } to { left: 100%; } }
+.step { margin-top: 7px; font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.step b { color: var(--c); font-weight: 400; }
+.gprog { --c: var(--green); --cr: 110, 231, 183; height: 2px; margin: 0; flex: none; visibility: hidden; }
+.gprog.on { visibility: visible; }
+.gstat { color: var(--amber); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+.gstat .glink { color: inherit; cursor: pointer; text-decoration: none; border-bottom: 1px dashed rgba(240, 167, 66, .5); }
+.gstat .glink:hover { border-bottom-style: solid; text-shadow: 0 0 8px rgba(240, 167, 66, .5); }
+.newtag { font-size: 10px; padding: 0 5px; margin-left: 6px; vertical-align: 1px; }
+@keyframes pulse { 50% { opacity: .4; } }
+
+/* ---------- tables ---------- */
+.panel { border: 1px solid var(--line); background: var(--panel); margin-bottom: 30px; min-width: 0; }
+.panel-h { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.panel-h .t { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 15px; letter-spacing: .06em; }
+.panel-h .t::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+.panel-h .link { color: var(--green); cursor: pointer; letter-spacing: .06em; }
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-weight: 400; color: var(--green); opacity: .75; font-size: 11px; letter-spacing: .1em; padding: 12px 20px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 10px 20px; border-bottom: 1px solid rgba(110, 231, 183, .07); vertical-align: top; }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: rgba(110, 231, 183, .04); }
+td.dim { color: var(--dim); }
+td.nowrap { white-space: nowrap; }
+td .note { color: var(--dim); font-size: 12px; word-break: break-all; }
+/* always-visible terminal scrollbars (macOS hides overlay ones) */
+* { scrollbar-color: rgba(110, 231, 183, .35) rgba(0, 0, 0, .25); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: rgba(0, 0, 0, .3); }
+::-webkit-scrollbar-thumb { background: rgba(110, 231, 183, .28); border: 2px solid rgba(0, 0, 0, .3); }
+::-webkit-scrollbar-thumb:hover { background: rgba(110, 231, 183, .5); }
+::-webkit-scrollbar-corner { background: transparent; }
+td.summary { min-width: 200px; }
+table.dense { table-layout: fixed; min-width: 960px; }
+table.dense td { overflow-wrap: anywhere; }
+table.dense th, table.dense td { padding-left: 12px; padding-right: 12px; }
+td.fix { max-width: 140px; word-break: break-word; }
+td.vid { white-space: nowrap; }
+td.vid .note { white-space: normal; max-width: 200px; }
+td.ctx { max-width: 160px; word-break: break-word; }
+.empty { padding: 26px 20px; color: var(--dim); }
+.filter { background: rgba(0, 0, 0, .3); border: 1px solid var(--line); padding: 5px 10px; outline: 0; min-width: 200px; }
+.filter:focus { border-color: var(--line-strong); }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { cursor: pointer; opacity: .45; }
+.chip.on { opacity: 1; }
+.tabs { display: flex; gap: 6px; }
+.tab { padding: 6px 14px; border: 1px solid var(--line); cursor: pointer; color: var(--dim); background: none; }
+.tab.on { color: var(--green); border-color: var(--line-strong); background: rgba(110, 231, 183, .08); }
+
+.st { font-size: 12px; }
+.st.ok { color: var(--green); } .st.failed, .st.aborted { color: var(--red); } .st.running { color: var(--amber); animation: pulse 1.2s infinite; } .st.queued { color: var(--dim); }
+.sev { font-size: 11px; text-transform: uppercase; }
+.hold { border: 1px dashed rgba(240, 167, 66, .5); color: var(--amber); padding: 10px 14px; margin-bottom: 22px; background: rgba(240, 167, 66, .05); }
+.hold.mal { border: 1px solid var(--red); color: var(--red); background: rgba(255, 95, 95, .08); line-height: 1.7; }
+.cool { display: block; margin-top: 4px; color: var(--dim); font-size: 12px; }
+.sock { display: block; margin-top: 2px; color: var(--dim); font-size: 12px; white-space: normal; max-width: 340px; }
+.sock.warn { color: var(--amber); }
+.sock:hover { text-decoration: underline; }
+
+/* ---------- drawer ---------- */
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(760px, 100vw); background: var(--panel-solid); border-left: 1px solid var(--line-strong);
+  box-shadow: -20px 0 60px rgba(0, 0, 0, .6); transform: translateX(105%); transition: transform .2s; display: flex; flex-direction: column; z-index: 20; }
+.drawer.open { transform: none; }
+.malrow { cursor: pointer; padding: 2px 0; }
+.malrow .more { color: var(--dim); font-size: 12px; margin-left: 6px; }
+.malrow:hover .more { color: var(--red); text-decoration: underline; }
+.drawer-h { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--line); gap: 12px; }
+.drawer pre { flex: 1; margin: 0; overflow: auto; padding: 16px 20px; color: var(--text); font: 12px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }
+.x { background: none; border: 1px solid var(--line); cursor: pointer; padding: 4px 10px; color: var(--dim); }
+
+/* ---------- settings ---------- */
+.form { display: grid; gap: 18px; padding: 20px; max-width: 640px; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+.row .d { color: var(--dim); font-size: 12px; }
+.row input[type=number] { width: 90px; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-strong); padding: 6px 8px; outline: 0; }
+.row input[type=checkbox] { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--green); }
+.kv { padding: 0 20px 20px; color: var(--dim); display: grid; gap: 6px; }
+.kv code { color: var(--text); }
+.row.off { opacity: .45; }
+.row.col { flex-direction: column; align-items: stretch; gap: 10px; }
+.mrow { display: flex; align-items: center; gap: 8px; } .mrow svg { width: 16px; height: 16px; color: var(--green); }
+.pathrow { display: flex; gap: 10px; }
+.form input[type=text], .form input[type=password] { flex: 1; min-width: 0; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-strong); padding: 7px 10px; outline: 0; }
+.form input[type=text]:focus, .form input[type=password]:focus { border-color: var(--green); }
+.presets { display: flex; gap: 8px; flex-wrap: wrap; }
+.steps { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; }
+.step { padding: 4px 10px; border: 1px solid var(--line); color: var(--dim); font-size: 12px; letter-spacing: .06em; }
+.step.on { border-color: var(--green); color: var(--green); box-shadow: 0 0 12px rgba(110, 231, 183, .18); }
+.step.done { color: var(--text); }
+.wiz-nav { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 20px 20px; flex-wrap: wrap; }
+.ok { color: var(--green); } .bad { color: var(--red); }
+
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel-solid); border: 1px solid var(--green);
+  color: var(--green); padding: 10px 18px; box-shadow: 0 0 20px rgba(110, 231, 183, .25); opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 30; }
+.toast.show { opacity: 1; }
+
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; }
+  .side { position: fixed; inset: 0 auto 0 0; width: 260px; z-index: 15; transform: translateX(-100%); transition: transform .2s; }
+  .side.open { transform: none; }
+  .menu-btn { display: block; }
+  .top { padding: 0 16px; }
+  .content { padding: 20px 16px 60px; }
+  .kbd { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side" id="side">
+    <div class="brand" id="brand"></div>
+    <nav id="nav"></nav>
+    <div class="me"><div class="avatar" id="avatar">--</div><div><div class="who" id="who">-</div><div class="addr" id="addr">-</div></div></div>
+  </aside>
+  <div class="main">
+    <header class="top">
+      <button class="menu-btn" id="menuBtn" aria-label="Menu">≡</button>
+      <label class="search"><span class="pr">&gt;</span><input id="q" placeholder="grep 'package'..." autocomplete="off" spellcheck="false"><span class="kbd">CTRL+F</span></label>
+      <div class="grow"></div>
+      <div class="gstat" id="gstat"></div>
+      <button class="bell" id="bell" title="Events"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="dot"></span></button>
+    </header>
+    <div class="prog gprog indet" id="gprog"><i></i></div>
+    <main class="content" id="view"></main>
+  </div>
+</div>
+<div class="drawer" id="drawer">
+  <div class="drawer-h"><div id="drawerTitle">job</div><button class="x" id="drawerClose">[ESC]</button></div>
+  <pre id="drawerLog"></pre>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const TOKEN = "__PKGDASH_TOKEN__";
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const SEV = { critical: 4, high: 3, medium: 2, low: 1, unknown: 0 };
+const SEV_CLASS = { critical: "red", high: "red", medium: "amber", low: "blue", unknown: "muted" };
+
+const ICONS = {
+  grid: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>',
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
+  log: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+  box: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05"/><path d="M12 22.08V12"/>',
+  py: '<path d="M8 3h5a3 3 0 0 1 3 3v4H8a3 3 0 0 0-3 3v2"/><path d="M16 21h-5a3 3 0 0 1-3-3v-4h8a3 3 0 0 0 3-3V9"/><circle cx="11" cy="6" r=".6"/><circle cx="13" cy="18" r=".6"/>',
+  js: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M10 9v6a2 2 0 0 1-4 0"/><path d="M18 9.5a2 2 0 0 0-2-1.5c-1.1 0-2 .7-2 1.6 0 2.4 4 1.4 4 3.8 0 .9-.9 1.6-2 1.6a2 2 0 0 1-2-1.5"/>',
+  beer: '<path d="M17 11h1a3 3 0 0 1 0 6h-1"/><path d="M5 8h12v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><path d="M6 8a3 3 0 0 1 3-4 3 3 0 0 1 5 0 3 3 0 0 1 3 4"/>',
+  go: '<path d="M4 12h6"/><path d="M2 9h6"/><path d="M5 15h5"/><circle cx="16" cy="12" r="5"/>',
+  rs: '<circle cx="12" cy="12" r="8"/><path d="M9 16V8h3.5a2 2 0 0 1 0 4H9"/><path d="M12 12l3 4"/>',
+  bin: '<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  up: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
+  plus: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+  pulse: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  layers: '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
+  folder: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>',
+};
+const icon = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICONS[n] || ICONS.box}</svg>`;
+
+// favicon: green >_ prompt on a dark tile; red dot while there are unread events
+// the pkgdash mark: a >_ prompt in a rounded square (favicon and sidebar logo)
+const LOGO = `<rect width="32" height="32" rx="6" fill="#050807"/><rect x="1" y="1" width="30" height="30" rx="5" fill="none" stroke="#6ee7b7" stroke-opacity=".55"/><path d="M8 10.5l6.5 5.5L8 21.5" fill="none" stroke="#6ee7b7" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.5 22h8" stroke="#6ee7b7" stroke-width="2.8" stroke-linecap="round"/>`;
+const brandHtml = host => `<svg class="mark" viewBox="0 0 32 32" aria-hidden="true">${LOGO}</svg><span class="word">pkgdash<span class="cur">_</span></span>`
+  + (host === null ? '<span class="host off">offline</span>' : "");
+function favicon(alert) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">${LOGO}${alert ? '<circle cx="25" cy="7" r="5.5" fill="#ff5f5f" stroke="#050807" stroke-width="2"/>' : ""}</svg>`;
+  const href = "data:image/svg+xml," + encodeURIComponent(svg);
+  if ($("#favicon").getAttribute("href") !== href) $("#favicon").setAttribute("href", href);
+}
+favicon(false);
+$("#brand").innerHTML = brandHtml("");
+
+let S = null, INV = null, VULNS = null, lastInvAt = -1, lastVulnAt = -1;
+const ui = { filter: "", vulnSev: new Set(["critical", "high", "medium", "low", "unknown"]), mTab: "packages", drawerJob: null, drawerOff: 0 };
+
+/* ---------- helpers ---------- */
+function ago(ts) {
+  if (!ts) return "never";
+  const s = Math.max(0, S.now - ts);
+  if (s < 60) return Math.floor(s) + "s ago";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  return Math.floor(s / 86400) + "d ago";
+}
+function until(ts) {
+  if (!ts) return "off";
+  const s = ts - S.now;
+  if (s <= 60) return "due";
+  if (s < 3600) return "in " + Math.round(s / 60) + "m";
+  return "in " + (s / 3600).toFixed(1) + "h";
+}
+const clock = ts => { const d = new Date(ts * 1000); return d.toLocaleString(undefined, { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }); };
+function uptime(s) { s = Math.floor(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return [h, m, x].map(v => String(v).padStart(2, "0")).join(":"); }
+const fmt = n => Number(n).toLocaleString();
+const mgr = id => S.managers.find(m => m.id === id);
+const slug = m => m.label.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/_$/, "");
+function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("show"), 2200); }
+
+async function api(path, body) {
+  const opt = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json", "X-Pkgdash-Token": TOKEN }, body: JSON.stringify(body) };
+  const r = await fetch(path, opt);
+  if (!r.ok) throw new Error(path + " → " + r.status);
+  return r.json();
+}
+
+const VERB = { scan: "scanning", audit: "auditing", update: "updating" };
+// keep the indeterminate animation's phase continuous across re-renders
+const phase = () => `animation-delay:-${(performance.now() / 1000 % 1.4).toFixed(2)}s`;
+function estimate(j) {
+  const prev = S.jobs.find(x => x.id !== j.id && x.manager === j.manager && x.action === j.action && (x.pkg || null) === (j.pkg || null) && x.state === "ok" && x.started && x.ended);
+  return prev ? Math.max(1, prev.ended - prev.started) : null;
+}
+const secs = s => s < 60 ? Math.round(s) + "s" : Math.floor(s / 60) + "m" + String(Math.round(s % 60)).padStart(2, "0") + "s";
+function progressHtml(mid) {
+  const run = S.jobs.find(j => j.manager === mid && j.state === "running");
+  const queued = S.jobs.filter(j => j.manager === mid && j.state === "queued");
+  if (!run && !queued.length) return "";
+  if (!run) return `<div class="prog indet queued"><i style="${phase()}"></i></div><div class="step">queued: ${queued.map(jobName).join(", ")} — waiting for other jobs</div>`;
+  const el = Math.max(0, S.now - run.started), est = estimate(run);
+  const pct = est ? Math.min(97, el / est * 100) : null;
+  const bar = pct == null ? `<div class="prog indet"><i style="${phase()}"></i></div>` : `<div class="prog"><i style="width:${pct.toFixed(1)}%"></i></div>`;
+  const eta = est ? (el < est ? ` · ~${secs(est - el)} left` : " · finishing…") : " · first run, no estimate";
+  const more = queued.length ? ` · +${queued.length} queued` : "";
+  return `${bar}<div class="step"><b>${VERB[run.action]}${run.pkg ? " " + esc(run.pkg) : ""}</b> ${secs(el)}${eta}${more}${run.step ? " — " + esc(run.step) : ""}</div>`;
+}
+// seconds until a package's new version is past its cooldown period (matches cooldown_left in server.py)
+const coolLeft = p => {
+  const days = Number(S.settings.cooldown_days) || 0;
+  return days > 0 && p.outdated && p.latest && p.released ? Math.max(0, p.released + days * 86400 - S.now) : 0;
+};
+const leftText = s => s >= 86400 ? `${Math.ceil(s / 86400)} day${Math.ceil(s / 86400) === 1 ? "" : "s"}` : `${Math.max(1, Math.ceil(s / 3600))} hour${Math.ceil(s / 3600) <= 1 ? "" : "s"}`;
+// matches flag_text in server.py
+const flagText = id => id.startsWith("MAL-") || id === "Socket: malware" ? `known malware ${id}` : `flagged by ${id}`;
+const SOCKET_ECO = { uv: "pypi", npm: "npm", cargo: "cargo" };
+const flagLink = (mid, h) => `<a class="link" href="${h.id.startsWith("Socket")
+  ? socketUrl(mid, h.pkg, h.version)
+  : `https://osv.dev/vulnerability/${encodeURIComponent(h.id)}`}" target="_blank" rel="noopener">${esc(h.id)}</a>`;
+// list: malware hits with their manager id added as `mid`
+// project hits are only pinned in a lockfile (maybe never installed), so they get their own wording
+// each line opens the advisory's details in the drawer (the id itself still links straight to OSV / Socket)
+function malwareBanner(list) {
+  const lines = l => l.map(h => `<div class="malrow" data-adv="${esc(h.id)}" data-mid="${esc(h.mid)}" data-pkg="${esc(h.pkg)}" data-ver="${esc(h.version)}" data-ctx="${esc(h.context)}" title="click for details">${esc(h.pkg)} ${esc(h.version)}${h.context !== h.pkg ? ` (inside ${esc(h.context)})` : ""} · ${flagLink(h.mid, h)} <span class="more">details ›</span></div>`).join("");
+  const inst = list.filter(h => !separate(h.mid)), locked = list.filter(h => h.mid === "projects"), images = list.filter(h => h.mid === "docker");
+  return (inst.length ? `<div class="hold mal">☠ FLAGGED PACKAGE INSTALLED — if it's malware, uninstall now and rotate any credentials it could reach:<br>${lines(inst)}</div>` : "")
+    + (locked.length ? `<div class="hold mal">☠ FLAGGED PACKAGE IN A PROJECT LOCKFILE — don't install that project's dependencies until the lockfile is fixed; if its node_modules / venv already has it, delete that and rotate any credentials it could reach:<br>${lines(locked)}</div>` : "")
+    + (images.length ? `<div class="hold mal">☠ FLAGGED PACKAGE IN A DOCKER IMAGE — don't run containers from that image; stop any that are running, delete it with docker rmi, and rotate any credentials those containers could reach:<br>${lines(images)}</div>` : "");
+}
+// what Socket.dev says about a pending version; links to Socket's page for that version
+const socketUrl = (mid, name, version) => `https://socket.dev/${SOCKET_ECO[mid]}/package/${name.split("/").map(encodeURIComponent).join("/")}/alerts/${encodeURIComponent(version)}`;
+// hover text for each Socket note (labels from SOCKET_LABEL in server.py); Socket's page has the specifics
+const SOCKET_HELP = {
+  "malware": "Socket confirmed this version is malware.",
+  "AI-flagged malware": "Socket's AI scan thinks this version is likely malicious; not yet confirmed by a human.",
+  "possible typosquat": "The name is suspiciously close to a popular package; it may be impersonating it.",
+  "troll package": "A joke or prank package that may do something unexpected.",
+  "protestware": "The code changes behaviour for political reasons, e.g. based on locale or IP address.",
+  "install script": "Runs code automatically while it's being installed, which is how most supply-chain malware starts.",
+  "network access": "The code can make network connections.",
+  "shell access": "The code can run shell commands.",
+  "eval": "The code runs dynamically built code (eval/exec), which can hide what it does.",
+  "obfuscated code": "Part of the code is deliberately hard to read.",
+  "obfuscated require": "It loads modules in a way designed to hide what it imports.",
+  "maintainer change": "Who can publish this package changed recently, a common sign of a hijacked account.",
+  "new publisher": "This version was published by someone who hasn't published it before.",
+  "git dependency": "Pulls a dependency straight from a git repo, bypassing the registry's checks.",
+  "http dependency": "Pulls a dependency from a plain URL, bypassing the registry's checks.",
+  "telemetry": "Sends usage data somewhere.",
+  "manifest mismatch": "The published metadata doesn't match what's actually in the package.",
+  "suspicious stars": "Its GitHub stars look bought or faked.",
+  "AI-flagged risk": "Socket's AI review spotted code that could be risky. Often a false positive for tools that legitimately do powerful things. Open Socket's page for its explanation.",
+  "AI-flagged anomaly": "Socket's AI review found code that looks out of place for this package. Open Socket's page for its explanation.",
+};
+function socketNote(p) {
+  const k = p.socket;
+  if (!k || !SOCKET_ECO[p.mid]) return "";
+  const a = (cls, title, text) => `<a class="sock ${cls}" href="${socketUrl(p.mid, p.name, p.latest)}" target="_blank" rel="noopener" title="${esc(title)}">${text}</a>`;
+  if (k.unscanned) return a("", "Socket.dev has no analysis of this version yet", "socket: not analysed yet ↗");
+  const bits = [...(k.new || []).map(x => ["new: " + x, x]), ...(k.warn || []).map(x => [x, x])];
+  if (!bits.length) return a("", `Socket.dev found nothing new or concerning in ${p.latest}`, "socket ✓ ↗");
+  const help = bits.map(([t, x]) => `${t} — ${SOCKET_HELP[x] || "see Socket's page for details."}`).join("\n\n");
+  return a("warn", `${help}\n\n'new' = your installed ${p.version} doesn't do this. Click for Socket's page.`, `socket ⚠ ${esc(bits.map(b => b[0]).join(" · "))} ↗`);
+}
+const jobName = j => esc(j.action + (j.pkg ? " " + j.pkg : ""));
+const pkgBusy = (mid, p) => S.jobs.some(j => j.manager === mid && j.action === "update" && j.pkg === p.name && j.kind === p.kind && (j.state === "queued" || j.state === "running"));
+const isNew = p => p.first_seen && S.now - p.first_seen < 7 * 86400;
+const newTag = p => isNew(p) ? '<span class="tag blue newtag">NEW</span>' : "";
+
+async function run(manager, action, btn) {
+  if (action === "update") {
+    const what = manager === "all" ? "EVERY package manager" : mgr(manager).label;
+    if (!confirm(`Run updates for ${what}?\n\nThis installs new versions on your machine.`)) return;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = "> queued…"; btn.classList.add("busy"); }
+  const r = await api("/api/run", { manager, action });
+  toast(r.queued.length ? `queued ${r.queued.length} job${r.queued.length > 1 ? "s" : ""}: ${action}` : "already queued / running");
+  await refresh();
+}
+
+async function updateOne(manager, kind, name, btn) {
+  const p = ((INV || {})[manager] || []).find(x => x.kind === kind && x.name === name);
+  if (!p) return;
+  const left = coolLeft(p);
+  const msg = left
+    ? `${name} ${p.latest} is in its cooldown period (${leftText(left)} remaining).\n\nNew releases are held back in case they turn out to be hijacked. Update anyway?\n\n${p.version} → ${p.latest}`
+    : `Update ${name}?\n\n${p.version} → ${p.latest || "rebuild"}`;
+  const k = p.socket || {};
+  const sock = k.unscanned ? "Socket.dev hasn't analysed this version yet."
+    : [...(k.new || []).map(x => "new in this version: " + x), ...(k.warn || [])].map(x => "⚠ " + x).join("\n");
+  if (!confirm(sock ? `${msg}\n\nSocket.dev:\n${sock}` : msg)) return;
+  btn.disabled = true; btn.textContent = "> queued…"; btn.classList.add("busy");
+  try {
+    const r = await api("/api/run", { manager, action: "update", kind, pkg: name, force: left > 0 });
+    toast(r.queued.length ? `queued: update ${name}` : "already queued / running");
+  } catch (e) { toast("couldn't queue " + name + " — rescan and try again"); }
+  await refresh();
+}
+
+/* ---------- data ---------- */
+async function refresh() {
+  try { S = await api("/api/state"); } catch (e) { $("#brand").innerHTML = brandHtml(null); return; }
+  if (!S.settings.setup_done && route()[0] !== "setup") { location.hash = "#/setup"; return; }  // first run
+  const invAt = S.managers.reduce((a, m) => a + (m.scanned_at || 0), 0);
+  const vAt = S.managers.reduce((a, m) => a + (m.audited_at || 0), 0);
+  if (invAt !== lastInvAt) { INV = await api("/api/inventory"); lastInvAt = invAt; }
+  if (vAt !== lastVulnAt) { VULNS = await api("/api/vulns"); lastVulnAt = vAt; }
+  renderChrome();
+  render(false);
+}
+
+/* ---------- chrome ---------- */
+function route() { return (location.hash || "#/dashboard").slice(2).split("/"); }
+
+function renderChrome() {
+  const runs = S.jobs.filter(j => j.state === "running"), qd = S.jobs.filter(j => j.state === "queued").length;
+  $("#gprog").classList.toggle("on", runs.length + qd > 0);
+  $("#gprog").firstElementChild.setAttribute("style", phase());
+  // each running job opens its live output in the log drawer; the queued count opens the jobs page
+  $("#gstat").innerHTML = runs.length + qd ? "● " + runs.map(j => `<a class="glink" data-job="${esc(j.id)}" title="show live output">${esc(j.manager)} ${jobName(j)} ${secs(Math.max(0, S.now - j.started))}</a>`).join(", ")
+    + (qd ? ` · <a class="glink" href="#/jobs">${qd} queued</a>` : "") : "";
+  if (!$("#brand .word") || $("#brand .host")) $("#brand").innerHTML = brandHtml(S.host);
+  $("#who").textContent = S.user;
+  $("#addr").textContent = S.addr;
+  $("#avatar").textContent = S.user.slice(0, 2).toUpperCase();
+  $("#bell").classList.toggle("on", S.unread > 0);
+  favicon(S.unread > 0);
+  const [r0, r1] = route();
+  const item = (href, ic, lbl, count, red) => {
+    const act = ("#/" + [r0, r1].filter(Boolean).join("/")) === href || (href === "#/dashboard" && !location.hash);
+    return `<a class="nav-item${act ? " active" : ""}" href="${href}">${icon(ic)}<span class="lbl">${lbl}</span>${count ? `<span class="nav-count${red ? " red" : ""}">${count}</span>` : ""}</a>`;
+  };
+  const running = S.jobs.filter(j => j.state === "running" || j.state === "queued").length;
+  let h = item("#/dashboard", "grid", "./dashboard.sh")
+    + item("#/events", "inbox", "/var/mail/inbox", S.unread)
+    + item("#/vulns", "shield", "./vulns.log", S.totals.vulns, S.totals.high > 0)
+    + item("#/jobs", "log", "./jobs.log", running)
+    + `<div class="nav-sec">-- MANAGERS --</div>`;
+  for (const m of S.managers) if (m.available) h += item("#/m/" + m.id, m.icon, "./" + m.id, m.vulns || "", m.high > 0);
+  h += `<div class="nav-sec">-- SYSTEM CONFIG --</div>` + item("#/setup", "layers", "./setup") + item("#/config", "gear", "~/.pkgdashrc");
+  $("#nav").innerHTML = h;
+}
+
+/* ---------- views ---------- */
+let lastView = "";
+function render(force = true) {
+  if (!S) return;
+  const [r0, r1] = route();
+  const key = r0 + "/" + (r1 || "");
+  const views = { dashboard: viewDash, events: viewEvents, vulns: viewVulns, jobs: viewJobs, packages: viewPackages, outdated: viewOutdated, m: viewMgr, config: viewConfig, search: viewSearch, setup: viewSetup };
+  const fn = views[r0] || viewDash;
+  // keep inputs (filters, settings) intact while polling: full re-render only on navigation
+  if (force || key !== lastView) { $("#view").innerHTML = fn.shell ? fn.shell(r1) : ""; lastView = key; fn.bind && fn.bind(r1); }
+  fn(r1);
+}
+
+function statCard(color, label, ic, big, tagHtml, meta, href) {
+  return `<div class="card ${color}${href ? ' click" data-goto="' + href : ""}"><div class="card-h">${label}${icon(ic)}</div><div class="big">${big}</div><div class="meta">${tagHtml}${meta ? `<span>${meta}</span>` : ""}</div></div>`;
+}
+
+function mgrCard(m) {
+  const vt = m.audited_at == null ? `<span class="tag muted">not audited</span>`
+    : m.vulns ? `<span class="tag ${m.high ? "red" : "amber"}">${icon("alert").replace("<svg", '<svg width="12" height="12"')} ${m.vulns} vulns</span>`
+    : `<span class="tag">✓ clean</span>`;
+  const ot = m.outdated ? `<span class="tag amber">↑ ${m.outdated} outdated</span>` : "";
+  const btn = (a, cls) => m.actions.includes(a) ? (m.busy.includes(a)
+    ? `<button class="btn sm busy" disabled>&gt; ${VERB[a]}…</button>`
+    : `<button class="btn sm ${cls || ""}" data-run="${m.id}:${a}">&gt; ${a}</button>`) : "";
+  return `<div class="card ${m.color}">
+    <div class="card-h"><a class="title" href="#/m/${m.id}">${slug(m)}</a>${icon(m.icon)}</div>
+    <div class="big">${fmt(m.count)}<small> ${esc(m.unit)}</small></div>
+    <div class="meta">${vt}${ot}<span>scan ${ago(m.scanned_at)}</span></div>
+    <div class="mgr-actions">${btn("scan")}${btn("audit")}${m.separate ? "" : m.hold ? `<button class="btn sm" disabled title="${esc(m.hold)}">&gt; update [held]</button>` : btn("update", "warn")}</div>
+    ${progressHtml(m.id)}
+  </div>`;
+}
+
+function jobsTable(jobs) {
+  if (!jobs.length) return `<div class="empty">no jobs yet — hit &gt; SCAN_ALL</div>`;
+  return `<div class="tbl-wrap"><table><thead><tr><th>PROCESS</th><th>VALUE</th><th>TIMESTAMP</th><th>STATE</th></tr></thead><tbody>${jobs.map(j => {
+    const m = mgr(j.manager);
+    return `<tr class="click" data-job="${esc(j.id)}"><td class="nowrap">${esc(m ? m.id : j.manager)} --${esc(j.action)}${j.pkg ? " " + esc(j.pkg) : ""}${j.trigger === "schedule" ? ' <span class="note">(cron)</span>' : ""}</td><td class="dim">${esc(j.summary || "—")}</td><td class="nowrap dim">${clock(j.started || j.queued)}</td><td class="nowrap"><span class="st ${j.state}">${j.state.toUpperCase()}</span></td></tr>`;
+  }).join("")}</tbody></table></div>`;
+}
+
+function allBtn(a, cls) {
+  const n = S.jobs.filter(j => j.action === a && (j.state === "running" || j.state === "queued")).length;
+  return n ? `<button class="btn ${cls} busy" data-run="all:${a}">&gt; ${VERB[a].toUpperCase()}… [${n}]</button>`
+           : `<button class="btn ${cls}" data-run="all:${a}">&gt; ${a.toUpperCase()}_ALL</button>`;
+}
+
+function viewDash() {
+  const t = S.totals;
+  const lastScan = Math.max(0, ...S.managers.map(m => m.scanned_at || 0));
+  const cooling = S.managers.reduce((a, m) => a + (m.cooling || 0), 0), blocked = S.managers.reduce((a, m) => a + (m.blocked || 0), 0);
+  $("#view").innerHTML = `
+    <div class="page-head">
+      <div><h1>SYSTEM_OVERVIEW</h1><div class="sub">Status: <b>ONLINE</b> | Uptime: <b>${uptime(S.uptime)}</b> | Last scan: <b>${ago(lastScan || null)}</b> | Next: scan <b>${until(S.next.scan)}</b> · audit <b>${until(S.next.audit)}</b></div></div>
+      <div class="actions">
+        ${allBtn("update", "warn")}${allBtn("audit", "")}${allBtn("scan", "primary")}
+      </div>
+    </div>
+    ${malwareBanner(S.managers.flatMap(m => (m.malware || []).map(h => ({ ...h, mid: m.id }))))}
+    <div class="grid stats">
+      ${statCard("", "PACKAGES_TRACKED", "box", fmt(t.packages), `<span class="tag">${icon("plus").replace("<svg", '<svg width="12" height="12"')} +${t.new7}</span>`, "new packages / 7d", "#/packages")}
+      ${statCard(t.high ? "red" : t.vulns ? "amber" : "", "KNOWN_VULNS", "shield", fmt(t.vulns), `<span class="tag ${t.high ? "red" : "muted"}">${t.high} high/crit</span>`, "across all audits", "#/vulns")}
+      ${statCard("amber", "OUTDATED", "up", fmt(t.outdated), `<span class="tag muted">${cooling} in cooldown</span>${blocked ? ` <span class="tag red">${blocked} blocked</span>` : ""}`, `${Math.max(0, t.outdated - cooling - blocked)} ready to update`, "#/outdated")}
+      ${statCard("blue", "JOBS_24H", "pulse", fmt(t.jobs24), `<span class="tag ${t.failed24 ? "red" : "blue"}">${t.failed24} failed</span>`, "scan · audit · update", "#/jobs")}
+    </div>
+    <div class="grid">${S.managers.filter(m => m.available).map(mgrCard).join("")}</div>
+    <div class="panel"><div class="panel-h"><span class="t">JOB_LOG</span><a class="link" href="#/jobs">[VIEW_ALL]</a></div>${jobsTable(S.jobs.slice(0, 8))}</div>`;
+}
+
+function viewJobs() {
+  $("#view").innerHTML = `<div class="page-head"><div><h1>JOBS_LOG</h1><div class="sub">Click a row for its full output.</div></div></div>
+    <div class="panel"><div class="panel-h"><span class="t">ALL_JOBS</span></div>${jobsTable(S.jobs)}</div>`;
+}
+
+function viewEvents() {
+  const ev = S.events;
+  const kindTag = { new_pkg: ["blue", "NEW"], removed_pkg: ["muted", "REMOVED"], new_vuln: ["red", "VULN"], job_failed: ["red", "FAIL"], malware: ["red", "MALWARE"] };
+  $("#view").innerHTML = `<div class="page-head"><div><h1>INBOX</h1><div class="sub">New/removed packages, new vulnerabilities and failed jobs.</div></div>
+      <div class="actions"><button class="btn" id="markRead" ${S.unread ? "" : "disabled"}>&gt; mark_all_read</button></div></div>
+    <div class="panel"><div class="panel-h"><span class="t">EVENTS</span></div>${ev.length ? `<div class="tbl-wrap"><table><thead><tr><th>TYPE</th><th>MESSAGE</th><th>TIMESTAMP</th></tr></thead><tbody>${ev.map(e => {
+      const [c, l] = kindTag[e.kind] || ["muted", e.kind];
+      return `<tr><td class="nowrap"><span class="tag ${c}">${l}</span>${e.read ? "" : ' <span style="color:var(--red)">●</span>'}</td><td>${esc(e.text)}</td><td class="nowrap dim">${clock(e.ts)}</td></tr>`;
+    }).join("")}</tbody></table></div>` : `<div class="empty">nothing yet — events appear after the second scan/audit of a manager</div>`}</div>`;
+  $("#markRead").onclick = async () => { await api("/api/events/read", {}); refresh(); };
+}
+
+function vulnRows(list, withMgr) {
+  if (!list.length) return `<div class="empty">no findings ${VULNS && Object.keys(VULNS).length ? "✓" : "— run an audit"}</div>`;
+  return `<div class="tbl-wrap"><table class="dense"><colgroup><col style="width:104px">${withMgr ? '<col style="width:64px">' : ""}<col style="width:17%"><col style="width:190px"><col><col style="width:130px"><col style="width:150px"></colgroup><thead><tr><th>SEV</th>${withMgr ? "<th>MGR</th>" : ""}<th>PACKAGE</th><th>ID</th><th>SUMMARY</th><th>FIX</th><th>CONTEXT</th></tr></thead><tbody>${list.map(f => `<tr>
+    <td class="nowrap"><span class="tag ${SEV_CLASS[f.severity]} sev">${f.severity}</span></td>
+    ${withMgr ? `<td class="dim nowrap">${esc(f.mgr)}</td>` : ""}
+    <td>${esc(f.pkg)}${f.version ? `<div class="note">${esc(f.version)}</div>` : ""}</td>
+    <td class="vid"><a href="https://osv.dev/vulnerability/${encodeURIComponent(f.id)}" target="_blank" rel="noopener">${esc(f.id)}</a>${f.aliases.length ? `<div class="note">${f.aliases.map(esc).join(" ")}</div>` : ""}</td>
+    <td class="summary">${esc(f.summary)}</td><td class="fix">${esc(f.fix)}</td><td class="dim ctx">${esc(f.context)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+// project lockfiles have their own page; leave them out of the machine-wide lists
+const separate = mid => !!(mgr(mid) || {}).separate;
+function allVulns() {
+  const out = [];
+  for (const [mid, fs] of Object.entries(VULNS || {})) if (!separate(mid)) for (const f of fs) out.push({ ...f, mgr: mid });
+  return out.sort((a, b) => SEV[b.severity] - SEV[a.severity]);
+}
+
+viewVulns.shell = () => `<div class="page-head"><div><h1>VULNERABILITIES</h1><div class="sub" id="vsub"></div></div>
+  <div class="actions"><button class="btn primary" data-run="all:audit">&gt; AUDIT_ALL</button></div></div>
+  <div class="panel"><div class="panel-h"><span class="t">FINDINGS</span><div class="chips" id="chips"></div><input class="filter" id="vf" placeholder="filter…"></div><div id="vbody"></div></div>`;
+viewVulns.bind = () => { $("#vf").value = ui.filter; $("#vf").oninput = e => { ui.filter = e.target.value; viewVulns(); }; };
+function viewVulns() {
+  const all = allVulns(), q = ui.filter.toLowerCase();
+  const counts = {}; all.forEach(f => counts[f.severity] = (counts[f.severity] || 0) + 1);
+  $("#vsub").innerHTML = `Audits: ${S.managers.filter(m => m.actions.includes("audit")).map(m => `${m.id} <b>${ago(m.audited_at)}</b>`).join(" · ")}`;
+  $("#chips").innerHTML = Object.keys(SEV).map(s => `<span class="tag chip ${SEV_CLASS[s]} ${ui.vulnSev.has(s) ? "on" : ""}" data-sev="${s}">${s} ${counts[s] || 0}</span>`).join("");
+  const list = all.filter(f => ui.vulnSev.has(f.severity) && (!q || [f.pkg, f.id, f.summary, f.context, f.mgr].join(" ").toLowerCase().includes(q)));
+  $("#vbody").innerHTML = vulnRows(list, true);
+}
+
+viewMgr.shell = id => {
+  const m = mgr(id);
+  if (!m) return `<div class="empty">unknown manager</div>`;
+  return `<div class="page-head"><div><h1>./${esc(m.id)}</h1><div class="sub">${esc(m.desc)}</div><div class="sub" id="msub"></div><div class="card ${m.color}" id="mprog" style="border:0;background:none;box-shadow:none;padding:0;max-width:520px"></div></div><div class="actions" id="macts"></div></div>
+    ${m.hold ? `<div class="hold">⚠ ${esc(m.hold)}</div>` : ""}
+    <div id="mmal"></div>
+    <div class="grid stats" id="mstats"></div>
+    <div class="panel"><div class="panel-h"><div class="tabs"><button class="tab" data-tab="packages">PACKAGES</button>${m.actions.includes("audit") ? '<button class="tab" data-tab="vulns">VULNS</button>' : ""}<button class="tab" data-tab="jobs">JOBS</button></div><input class="filter" id="mf" placeholder="filter…"></div><div id="mbody"></div></div>`;
+};
+viewMgr.bind = () => { if ($("#mf")) { $("#mf").value = ui.filter; $("#mf").oninput = e => { ui.filter = e.target.value; viewMgr(route()[1]); }; } };
+function viewMgr(id) {
+  const m = mgr(id);
+  if (!m) return;
+  const btn = (a, cls) => m.actions.includes(a) ? (m.busy.includes(a)
+    ? `<button class="btn busy" disabled>&gt; ${VERB[a].toUpperCase()}…</button>`
+    : `<button class="btn ${cls || ""}" data-run="${m.id}:${a}">&gt; ${a.toUpperCase()}</button>`) : "";
+  $("#macts").innerHTML = (m.hold || m.separate ? "" : btn("update", "warn")) + btn("audit") + btn("scan", "primary");
+  const ps = m.id === "projects" ? S.projects || {} : null;  // lockfile sync with the menu bar app
+  $("#msub").innerHTML = `scanned <b>${ago(m.scanned_at)}</b>${m.actions.includes("audit") ? ` · audited <b>${ago(m.audited_at)}</b>` : ""}`
+    + (ps ? ` · lockfiles from the menu bar app <b>${ago(ps.at)}</b>` : "");
+  $("#mprog").innerHTML = progressHtml(m.id);
+  $("#mstats").innerHTML = statCard(m.color === "muted" ? "" : m.color, m.unit.toUpperCase(), m.icon, fmt(m.count), "", m.separate ? `malware check ${ago(m.malware_checked_at)}` : "")
+    + (m.actions.includes("audit") ? statCard(m.high ? "red" : m.vulns ? "amber" : "", "VULNS", "shield", fmt(m.vulns), `<span class="tag ${m.high ? "red" : "muted"}">${m.high} high/crit</span>`, "") : "")
+    + (!m.separate ? statCard("amber", "OUTDATED", "up", fmt(m.outdated),
+      (m.cooling ? `<span class="tag muted">${m.cooling} in cooldown</span> ` : "") + (m.blocked ? `<span class="tag red">${m.blocked} blocked</span>` : ""),
+      m.osv ? `malware check ${ago(m.malware_checked_at)}` : "") : "");
+  $("#mmal").innerHTML = (ps && ps.error ? `<div class="hold">⚠ ${esc(ps.error)}</div>` : "")
+    + (ps && !ps.at ? `<div class="hold">Waiting for the menu bar app to send the lockfiles in ${esc(S.settings.projects_root)}. Make sure the pkgdash menu bar icon is running and macOS allowed it to read Documents.</div>` : "")
+    + malwareBanner(m.malware.map(h => ({ ...h, mid: m.id })));
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.tab === ui.mTab));
+  const q = ui.filter.toLowerCase();
+  if (ui.mTab === "vulns") {
+    const ign = ignoredList(id);
+    $("#mbody").innerHTML = vulnRows(((VULNS || {})[id] || []).filter(f => !ign.includes(f.context) && (!q || [f.pkg, f.id, f.summary, f.context].join(" ").toLowerCase().includes(q))), false);
+  } else if (ui.mTab === "jobs") {
+    $("#mbody").innerHTML = jobsTable(S.jobs.filter(j => j.manager === id));
+  } else {
+    const pk = ((INV || {})[id] || []).filter(p => !q || [p.name, p.kind, p.note].join(" ").toLowerCase().includes(q))
+      .sort((a, b) => (isIgnored(a) - isIgnored(b)) || (!!b.malware - !!a.malware) || (isNew(b) - isNew(a)) || (b.outdated - a.outdated) || a.name.localeCompare(b.name));
+    $("#mbody").innerHTML = pk.length ? pkgTable(pk.map(p => ({ ...p, mid: m.id })), false)
+      : `<div class="empty">${m.scanned_at ? "no matches" : "not scanned yet — hit &gt; SCAN"}</div>`;
+  }
+}
+
+/* ---------- package tables (manager pages, PACKAGES, OUTDATED) ---------- */
+// rows are inventory packages with their manager id added as `mid`
+function updBtn(p) {
+  const m = mgr(p.mid);
+  if (!m || !m.actions.includes("update") || m.hold) return "";
+  if (pkgBusy(p.mid, p)) return ' <button class="btn sm busy" disabled>&gt; updating…</button>';
+  const attrs = `data-upd="${esc(p.mid)}" data-kind="${esc(p.kind)}" data-pkg="${esc(p.name)}"`;
+  return coolLeft(p) ? ` <button class="btn sm" ${attrs}>&gt; update anyway</button>` : ` <button class="btn sm warn" ${attrs}>&gt; update</button>`;
+}
+// projects: their CVEs, a lockfile-only fix (run by the menu bar app) and an ignore toggle
+const FIXABLE = ["npm", "uv", "cargo"];
+const ignoredList = mid => (separate(mid) && (S[mid] || {}).ignored) || [];
+const isIgnored = p => ignoredList(p.mid).includes(p.name);
+// status cell for project lockfiles and docker images: their vulns, a fix (projects only) and ignore
+function projCell(p) {
+  const vs = ((VULNS || {})[p.mid] || []).filter(f => f.context === p.name);
+  const high = vs.filter(f => f.severity === "high" || f.severity === "critical").length;
+  const ign = isIgnored(p);
+  const proj = p.mid === "projects", what = proj ? "project" : "image";
+  const fixable = proj ? 0 : vs.filter(f => f.fix && f.fix !== "none").length;
+  const rebuild = fixable && !ign ? ` <span class="tag muted" title="the distro / registry already has fixed versions: pull a newer image or rebuild it to pick them up">${fixable} fixed upstream · pull or rebuild</span>` : "";
+  const run = p.running ? ` <span class="tag amber" title="containers from this image are running now">${p.running} running</span>` : "";
+  const tag = !mgr(p.mid).audited_at ? '<span class="tag muted">not audited</span>'
+    : !proj && p.version === "0 pkgs" ? '<span class="tag muted" title="static binaries only (no OS package list, Python or npm packages), so there\'s nothing pkgdash can check yet">nothing to check</span>'
+    : vs.length ? `<span class="tag ${ign ? "muted" : high ? "red" : "amber"}">${vs.length} vulns${high ? ` · ${high} high` : ""}</span>` : '<span class="tag">✓ clean</span>';
+  const attrs = `data-mid="${esc(p.mid)}" data-kind="${esc(p.kind)}" data-pkg="${esc(p.name)}"`;
+  const fix = !proj ? "" : !vs.length || ign ? "" : pkgBusy("projects", p) ? ' <button class="btn sm busy" disabled>&gt; fixing…</button>'
+    : FIXABLE.includes(p.kind) ? ` <button class="btn sm warn" data-fix ${attrs} title="Rewrite the lockfile to fixed versions. Nothing is installed or run; review it with git diff">&gt; fix lockfile</button>`
+    : ` <span class="dim" title="pkgdash can't rewrite ${esc(p.kind)} lockfiles; the VULNS tab lists the fixed versions">fix by hand</span>`;
+  return `${tag}${rebuild}${run}${fix} <button class="btn sm" data-ign="${ign ? "0" : "1"}" ${attrs} title="${ign ? `count this ${what}'s vulnerabilities again` : "a deliberate target or someone else's code: stop counting its vulnerabilities"}">&gt; ${ign ? "unignore" : "ignore"}</button>`;
+}
+async function fixProject(kind, name, btn) {
+  if (!confirm(`Fix ${name}'s ${kind} lockfile?\n\nThe menu bar app rewrites the lockfile to versions without the known vulnerabilities (no major upgrades). Nothing is installed and no package code runs.\n\nAfterwards, review the change in the repo with git diff and commit it, or git checkout to undo.`)) return;
+  btn.disabled = true; btn.textContent = "> queued…";
+  try { const r = await api("/api/run", { manager: "projects", action: "update", kind, pkg: name }); toast(r.queued.length ? `queued: fix ${name}` : "already queued / running"); }
+  catch (e) { toast("couldn't queue the fix — rescan and try again"); }
+  refresh();
+}
+async function ignoreProject(mid, name, on) {
+  await api("/api/projects/ignore", { manager: mid, name, ignore: on });
+  toast(on ? `ignoring ${name}` : `counting ${name} again`);
+  await refresh();
+}
+function latestCell(p) {
+  if (separate(p.mid)) return projCell(p);
+  if (!p.outdated) return '<span class="dim">—</span>';
+  if (p.blocked) return `<span style="color:var(--red)">↑ ${esc(p.latest)}</span> <span class="tag red" title="OSV or Socket.dev flags this version, so pkgdash won't install it">blocked: ${esc(flagText(p.blocked))}</span>`;
+  const left = coolLeft(p);
+  const since = p.released_src === "seen" ? "counting from when pkgdash first saw it" : "counting from its release";
+  return `<span style="color:var(--amber)">↑ ${esc(p.latest || "rebuild")}</span>${updBtn(p)}${left ? `<span class="cool" title="${since}">in cooldown period, ${leftText(left)} remaining</span>` : ""}${socketNote(p)}`;
+}
+function pkgTable(rows, withMgr) {
+  const proj = rows.length && separate(rows[0].mid), img = proj && rows[0].mid === "docker";
+  return `<div class="tbl-wrap"><table><thead><tr>${withMgr ? "<th>MGR</th>" : ""}<th>${img ? "IMAGE" : "NAME"}</th><th>${img ? "CONTENTS" : proj ? "DEPS" : "VERSION"}</th><th>${proj ? "STATUS" : "LATEST"}</th><th>${img ? "OS" : "KIND"}</th><th>${img ? "NOTE" : proj ? "LOCKFILE" : "NOTE"}</th></tr></thead><tbody>${rows.map(p => `<tr${isIgnored(p) ? ' style="opacity:.5"' : ""}>
+    ${withMgr ? `<td class="nowrap"><a class="link" href="#/m/${esc(p.mid)}">${esc(p.mid)}</a></td>` : ""}
+    <td ${proj ? 'style="word-break:break-all;min-width:220px"' : 'class="nowrap"'}>${esc(p.name)}${newTag(p)}${p.malware ? ` <span class="tag red">MALWARE ${esc(p.malware)}</span>` : ""}</td><td class="nowrap dim">${esc(p.version)}</td>
+    <td ${proj ? 'style="min-width:260px"' : 'class="nowrap"'}>${latestCell(p)}</td>
+    <td class="nowrap dim">${esc(p.kind)}</td><td ${proj ? 'class="nowrap"' : 'style="min-width:160px"'}><span class="note">${esc(p.note)}</span></td></tr>`).join("")}</tbody></table></div>`;
+}
+const allPkgs = () => Object.entries(INV || {}).filter(([mid]) => !separate(mid)).flatMap(([mid, pk]) => pk.map(p => ({ ...p, mid })));
+
+viewPackages.shell = () => `<div class="page-head"><div><h1>PACKAGES</h1><div class="sub" id="psub"></div></div>
+  <div class="actions"><button class="btn" id="newOnly"></button></div></div>
+  <div class="panel"><div class="panel-h"><span class="t">EVERY MANAGER</span><input class="filter" id="pf" placeholder="filter…"></div><div id="pbody"></div></div>`;
+viewPackages.bind = () => {
+  $("#pf").value = ui.filter; $("#pf").oninput = e => { ui.filter = e.target.value; viewPackages(); };
+  $("#newOnly").onclick = () => { ui.newOnly = !ui.newOnly; viewPackages(); };
+};
+function viewPackages() {
+  const q = ui.filter.toLowerCase();
+  const all = allPkgs();
+  const rows = all.filter(p => (!ui.newOnly || isNew(p)) && (!q || [p.mid, p.name, p.kind, p.note].join(" ").toLowerCase().includes(q)))
+    .sort((a, b) => (isNew(b) - isNew(a)) || a.mid.localeCompare(b.mid) || a.name.localeCompare(b.name));
+  $("#newOnly").textContent = ui.newOnly ? "> show_all" : `> new_this_week [${all.filter(isNew).length}]`;
+  $("#newOnly").classList.toggle("primary", !!ui.newOnly);
+  $("#psub").innerHTML = `<b>${rows.length}</b> of ${all.length} packages${ui.newOnly ? " · new in the last 7 days" : ""} · newest first`;
+  $("#pbody").innerHTML = rows.length ? pkgTable(rows, true) : `<div class="empty">${INV ? "no matches" : "not scanned yet"}</div>`;
+}
+
+viewOutdated.shell = () => `<div class="page-head"><div><h1>OUTDATED</h1><div class="sub" id="osub"></div></div>
+  <div class="actions">${allBtn("update", "warn")}</div></div>
+  <div class="panel"><div class="panel-h"><span class="t">NEWER VERSIONS AVAILABLE</span></div><div id="obody"></div></div>`;
+function viewOutdated() {
+  const rows = allPkgs().filter(p => p.outdated)
+    .sort((a, b) => (!!a.blocked - !!b.blocked) || (coolLeft(a) - coolLeft(b)) || a.mid.localeCompare(b.mid) || a.name.localeCompare(b.name));
+  const ready = rows.filter(p => !p.blocked && !coolLeft(p)).length, cooling = rows.filter(p => !p.blocked && coolLeft(p)).length;
+  $("#osub").innerHTML = `<b>${ready}</b> ready to update · <b>${cooling}</b> in cooldown period${rows.length - ready - cooling ? ` · <b>${rows.length - ready - cooling}</b> blocked` : ""} · cooldown is ${Number(S.settings.cooldown_days) || 0} days (<a class="link" href="#/config">change</a>)`;
+  $("#obody").innerHTML = rows.length ? pkgTable(rows, true) : `<div class="empty">everything is up to date</div>`;
+}
+
+viewSearch.shell = () => `<div class="page-head"><div><h1>GREP</h1><div class="sub" id="ssub"></div></div></div><div class="panel"><div id="sbody"></div></div>`;
+function viewSearch() {
+  const q = $("#q").value.trim().toLowerCase();
+  const hits = [];
+  for (const [mid, pk] of Object.entries(INV || {})) for (const p of pk) if (q && (p.name.toLowerCase().includes(q) || (p.note || "").toLowerCase().includes(q))) hits.push({ ...p, mid });
+  const vulnBy = {};
+  allVulns().forEach(f => { const k = f.mgr + "|" + f.pkg.toLowerCase(); vulnBy[k] = (vulnBy[k] || 0) + 1; });
+  $("#ssub").innerHTML = q ? `<b>${hits.length}</b> matches for '${esc(q)}' across all managers` : "type in the search bar";
+  $("#sbody").innerHTML = hits.length ? `<div class="tbl-wrap"><table><thead><tr><th>MGR</th><th>NAME</th><th>VERSION</th><th>LATEST</th><th>KIND</th><th>NOTE</th></tr></thead><tbody>${hits.map(p => {
+    const v = vulnBy[p.mid + "|" + p.name.toLowerCase()];
+    return `<tr class="click" data-goto="#/m/${p.mid}"><td class="dim nowrap">${esc(p.mid)}</td><td class="nowrap">${esc(p.name)}${newTag(p)}${v ? ` <span class="tag red">${v} vulns</span>` : ""}</td><td class="dim nowrap">${esc(p.version)}</td><td class="nowrap">${p.outdated ? `<span style="color:var(--amber)">↑ ${esc(p.latest || "rebuild")}</span>` : "—"}</td><td class="dim nowrap">${esc(p.kind)}</td><td><span class="note">${esc(p.note)}</span></td></tr>`;
+  }).join("")}</tbody></table></div>` : `<div class="empty">no matches</div>`;
+}
+
+const SETTINGS = [
+  ["scan_every_hours", "num", "Inventory scan every N hours", "detects new / removed packages and outdated versions · 0 = off"],
+  ["audit_every_hours", "num", "CVE audit every N hours", "pip-audit, npm audit, brew vulns, govulncheck, OSV · 0 = off"],
+  ["update_every_hours", "num", "Auto-update every N hours", "runs every non-held manager's update · 0 = off (recommended)"],
+  ["cooldown_days", "num", "Cooldown before installing new versions (days)", "updates wait until a release is this old — hijacked releases are usually caught and pulled within days · 0 = off"],
+  ["socket_check", "bool", "Socket.dev check", "malware checks also ask Socket.dev (npm, PyPI, crates.io) and note what new versions start doing · add the token on the ./setup page"],
+  ["notify", "bool", "macOS notifications", "for new packages, new vulns and failures from scheduled runs"],
+  ["npm_major_self_update", "bool", "Allow npm major self-update", "off = keep npm on its current major (e.g. 11.x)"],
+  ["brew_cleanup", "bool", "brew cleanup after upgrade", "removes old versions and download cache"],
+  ["brew_skip_running_casks", "bool", "Skip casks whose app is running", "avoids quitting apps mid-use (e.g. WhatsApp)"],
+];
+viewConfig.shell = () => `<div class="page-head"><div><h1>~/.pkgdashrc</h1><div class="sub">Saved instantly.</div></div></div>
+  <div class="panel"><div class="panel-h"><span class="t">SCHEDULE &amp; BEHAVIOUR</span></div><div class="form">${SETTINGS.map(([k, t, l, d]) => `<label class="row"><div><div>${l}</div><div class="d">${d}</div></div>${t === "num" ? `<input type="number" min="0" step="1" data-k="${k}">` : `<input type="checkbox" data-k="${k}">`}</label>`).join("")}</div></div>
+  <div class="panel"><div class="panel-h"><span class="t">SERVICE</span></div><div class="kv" id="svc" style="padding-top:16px"></div></div>`;
+viewConfig.bind = () => bindSettings();
+function bindSettings() {
+  document.querySelectorAll("[data-k]").forEach(el => {
+    const k = el.dataset.k;
+    if (el.type === "checkbox") el.checked = !!S.settings[k]; else el.value = S.settings[k];
+    el.onchange = async () => { await api("/api/settings", { [k]: el.type === "checkbox" ? el.checked : Number(el.value) }); toast("saved " + k); refresh(); };
+  });
+}
+function socketLine() {
+  const k = S.socket || {}, q = k.quota;
+  if (!k.org) return `<div>socket.dev <code>not used yet</code></div>`;
+  const refill = q && q.nextWindowRefresh ? ` · refills ${until(Date.parse(q.nextWindowRefresh) / 1000)}` : "";
+  return `<div>socket.dev org <code>${esc(k.org)}</code>${q ? ` · quota <code>${q.quota}/${q.maxQuota}</code> (as of ${ago(q.checked_at)})${refill}` : ""}</div>`;
+}
+function viewConfig() {
+  $("#svc").innerHTML = `<div>url <code>http://${esc(S.addr)}</code></div><div>launchd <code>com.adam.pkgdash</code> (starts at login, auto-restarts)</div><div>state <code>${esc(S.state_dir)}</code></div><div>next runs: scan <code>${until(S.next.scan)}</code> · audit <code>${until(S.next.audit)}</code> · update <code>${until(S.next.update)}</code></div>${socketLine()}`;
+}
+
+/* ---------- setup: a wizard on first run (and from the config page), a page afterwards ---------- */
+const SETUP_STEPS = [
+  ["MANAGERS", "Which package managers should pkgdash look after? Only the ones found on this Mac can be ticked.", setupManagers],
+  ["SCHEDULE_&_SAFETY", "How often it checks, and how careful it is with updates. The defaults are a good start.", setupSchedule],
+  ["PROJECTS", "Your own projects' lockfiles, checked for malware and CVEs without installing anything.", setupProjects],
+  ["SOCKET.DEV", "Optional: Socket.dev as a second opinion on malware, and on what new versions start doing.", setupSocket],
+];
+const SAFETY_KEYS = ["scan_every_hours", "audit_every_hours", "update_every_hours", "cooldown_days", "notify"];
+const ROOT_PRESETS = ["~/Documents", "~/Developer", "~/Projects", "~/code", "~/src"];
+const inWizard = () => !S.settings.setup_done || route()[1] === "wizard";
+let socketInfo = null;
+
+const settingRows = keys => SETTINGS.filter(([k]) => keys.includes(k)).map(([k, t, l, d]) => `<label class="row"><div><div>${l}</div><div class="d">${d}</div></div>${t === "num" ? `<input type="number" min="0" step="1" data-k="${k}">` : `<input type="checkbox" data-k="${k}">`}</label>`).join("");
+async function setManager(id, on) {
+  const off = new Set(S.settings.disabled_managers || []);
+  on ? off.delete(id) : off.add(id);
+  await api("/api/settings", { disabled_managers: [...off] });
+  toast((on ? "tracking " : "not tracking ") + id);
+  refresh();
+}
+
+function setupManagers() {
+  return `<div class="form">${S.manager_choices.filter(m => m.id !== "projects").map(m => `<label class="row${m.available ? "" : " off"}"><div><div class="mrow">${icon(m.icon)}<span>./${esc(m.id)}</span> <span class="dim">${esc(m.label.replace(new RegExp("^" + m.id + "\\s*", "i"), ""))}</span></div><div class="d">${m.available ? "found on this Mac" : "not installed: nothing to track"}</div></div><input type="checkbox" data-mgr="${esc(m.id)}" ${m.available ? "" : "disabled"}></label>`).join("")}</div>`;
+}
+setupManagers.bind = () => document.querySelectorAll("[data-mgr]").forEach(el => {
+  const m = S.manager_choices.find(c => c.id === el.dataset.mgr);
+  el.checked = m.available && m.enabled;
+  el.onchange = () => setManager(m.id, el.checked);
+});
+
+function setupSchedule() { return `<div class="form">${settingRows(SAFETY_KEYS)}</div>`; }
+
+function setupProjects() {
+  return `<div class="form">
+    <label class="row"><div><div>Check project lockfiles</div><div class="d">package-lock.json, yarn.lock, uv.lock, poetry.lock, Cargo.lock and requirements.txt, found by the menu bar app</div></div><input type="checkbox" id="projOn"></label>
+    <div class="row col"><div><div>Projects folder</div><div class="d">inside your home folder. The menu bar app reads it, so macOS asks once if it's a protected folder like ~/Documents</div></div>
+      <div class="pathrow"><input type="text" id="projRoot" spellcheck="false" autocomplete="off"><button class="btn sm" id="projSave">&gt; save</button></div>
+      <div class="presets">${ROOT_PRESETS.map(r => `<button class="btn sm" data-root="${esc(r)}">${esc(r)}</button>`).join("")}</div>
+      <div class="d" id="projStatus"></div></div>
+  </div>`;
+}
+async function saveRoot(v) {
+  try { await api("/api/settings", { projects_root: v }); toast("projects folder: " + v); refresh(); }
+  catch (e) { toast("that folder has to be inside your home folder (not ~/Library)"); }
+}
+setupProjects.bind = () => {
+  const on = !(S.settings.disabled_managers || []).includes("projects");
+  $("#projOn").checked = on;
+  $("#projOn").onchange = () => setManager("projects", $("#projOn").checked);
+  $("#projRoot").value = S.settings.projects_root;
+  $("#projSave").onclick = () => saveRoot($("#projRoot").value);
+  $("#projRoot").onkeydown = e => { if (e.key === "Enter") saveRoot($("#projRoot").value); };
+  document.querySelectorAll("[data-root]").forEach(b => b.onclick = () => { $("#projRoot").value = b.dataset.root; saveRoot(b.dataset.root); });
+};
+setupProjects.update = () => {
+  const p = S.projects || {}, el = $("#projStatus");
+  if (!el) return;
+  el.innerHTML = (S.settings.disabled_managers || []).includes("projects") ? "off"
+    : p.error ? `<span class="bad">${esc(p.error)}</span>`
+    : p.at ? `<span class="ok">✓</span> the menu bar app sent ${fmt(p.files || 0)} lockfiles ${ago(p.at)}`
+    : "waiting for the menu bar app (it checks in every 15s, and reads the folder at the next projects scan)";
+};
+
+function setupSocket() {
+  return `<div class="form">
+    <div class="row col"><div><div>API token</div><div class="d">free at <a class="link" href="https://socket.dev" target="_blank" rel="noopener">socket.dev</a> → Settings → API Tokens. Kept in your login Keychain (item <code>pkgdash-socket-token</code>), never in pkgdash's own files</div></div>
+      <div class="pathrow"><input type="password" id="sockTok" placeholder="sktsec_…" spellcheck="false" autocomplete="off"><button class="btn sm" id="sockSave">&gt; save_&amp;_test</button></div>
+      <div class="d" id="sockStatus">checking the Keychain…</div></div>
+    ${settingRows(["socket_check"])}
+  </div>`;
+}
+function sockStatus() {
+  const k = socketInfo;
+  if (!$("#sockStatus") || !k) return;
+  $("#sockStatus").innerHTML = k.has_token
+    ? `<span class="ok">✓</span> token saved${k.org ? ` · organization <code>${esc(k.org)}</code>` : ""} · <a class="link" id="sockTest">test it</a> · <a class="link" id="sockClear">remove it</a>`
+    : "no token saved: malware checks use OSV only";
+  if ($("#sockTest")) $("#sockTest").onclick = () => socketCall({}, "token works");
+  if ($("#sockClear")) $("#sockClear").onclick = () => socketCall({ clear: true }, "token removed");
+}
+async function socketCall(body, ok) {
+  $("#sockStatus").textContent = "asking Socket.dev…";
+  const r = await fetch("/api/socket", { method: "POST", headers: { "Content-Type": "application/json", "X-Pkgdash-Token": TOKEN }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (r.ok) { socketInfo = j; toast(ok); if ($("#sockTok")) $("#sockTok").value = ""; }
+  sockStatus();
+  if (!r.ok) $("#sockStatus").innerHTML = `<span class="bad">${esc(j.error || "failed")}</span>`;
+}
+setupSocket.bind = () => {
+  api("/api/socket").then(j => { socketInfo = j; sockStatus(); }).catch(() => {});
+  $("#sockSave").onclick = () => socketCall({ token: $("#sockTok").value }, "token saved");
+};
+
+function setupSummary() {
+  const on = S.manager_choices.filter(m => m.enabled && m.available && m.id !== "projects").map(m => m.id);
+  const projOff = (S.settings.disabled_managers || []).includes("projects");
+  const s = S.settings, every = (h, what) => +h ? `${what} every <code>${+h}h</code>` : `${what} <code>off</code>`;
+  return `<div class="kv" style="padding-top:18px">
+    <div>managers <code>${on.length ? on.map(esc).join(" · ") : "none"}</code></div>
+    <div>${every(s.scan_every_hours, "scan")} · ${every(s.audit_every_hours, "audit")} · ${every(s.update_every_hours, "auto-update")} · cooldown <code>${+s.cooldown_days} days</code></div>
+    <div>projects ${projOff ? "<code>off</code>" : `in <code>${esc(s.projects_root)}</code>`}</div>
+    <div>socket.dev ${socketInfo && socketInfo.has_token && s.socket_check ? "<code>on</code>" : "<code>off</code>"}</div>
+    <div style="margin-top:10px">The first scan takes a minute or two; audits follow. All of this stays on the <a class="link" href="#/setup">./setup</a> page.</div></div>`;
+}
+
+viewSetup.shell = () => {
+  const head = `<div class="page-head"><div><h1>./setup</h1><div class="sub">${inWizard() ? (S.settings.setup_done ? "Run through setup again." : "Welcome to pkgdash: a few choices, then it starts scanning.") + " Each choice is saved as you make it." : "Everything here is saved instantly."}</div></div>${inWizard() ? "" : `<div class="actions"><a class="btn" href="#/setup/wizard" onclick="ui.setupStep = 0">&gt; RUN_SETUP_WIZARD</a></div>`}</div>`;
+  if (!inWizard()) return head + SETUP_STEPS.map(([t, d, fn]) => `<div class="panel"><div class="panel-h"><span class="t">${esc(t.replace(/_/g, " "))}</span><span class="dim">${esc(d)}</span></div>${fn()}</div>`).join("");
+  const i = Math.min(ui.setupStep || 0, SETUP_STEPS.length), last = i === SETUP_STEPS.length;
+  const steps = SETUP_STEPS.map(([t], n) => `<span class="step${n === i ? " on" : n < i ? " done" : ""}">${n + 1}. ${esc(t)}</span>`).join("") + `<span class="step${last ? " on" : ""}">${SETUP_STEPS.length + 1}. GO</span>`;
+  const [t, d, fn] = last ? ["READY", "Here's what pkgdash will do.", setupSummary] : SETUP_STEPS[i];
+  return head + `<div class="steps">${steps}</div><div class="panel"><div class="panel-h"><span class="t">${esc(t.replace(/_/g, " "))}</span><span class="dim">${esc(d)}</span></div>${fn()}
+    <div class="wiz-nav">${i ? `<button class="btn" id="wizBack">&lt; back</button>` : `<span></span>`}${last
+      ? `<span class="actions"><button class="btn" id="wizSkip">&gt; finish_without_scanning</button><button class="btn primary" id="wizGo">&gt; START_FIRST_SCAN</button></span>`
+      : `<button class="btn primary" id="wizNext">next &gt;</button>`}</div></div>`;
+};
+async function finishSetup(scan) {
+  await api("/api/settings", { setup_done: true });
+  if (scan) { await api("/api/run", { manager: "all", action: "scan" }); await api("/api/run", { manager: "all", action: "audit" }); }
+  ui.setupStep = 0;
+  location.hash = "#/dashboard";
+  refresh();
+}
+viewSetup.bind = () => {
+  bindSettings();
+  const fns = inWizard() ? [SETUP_STEPS[ui.setupStep || 0]?.[2]].filter(Boolean) : SETUP_STEPS.map(s => s[2]);
+  fns.forEach(fn => fn.bind && fn.bind());
+  const go = n => { ui.setupStep = n; render(true); window.scrollTo(0, 0); };
+  if ($("#wizNext")) $("#wizNext").onclick = () => go((ui.setupStep || 0) + 1);
+  if ($("#wizBack")) $("#wizBack").onclick = () => go((ui.setupStep || 0) - 1);
+  if ($("#wizGo")) $("#wizGo").onclick = () => finishSetup(true);
+  if ($("#wizSkip")) $("#wizSkip").onclick = () => finishSetup(false);
+};
+function viewSetup() { setupProjects.update(); }
+
+/* ---------- drawer ---------- */
+async function openJob(id) {
+  ui.drawerJob = id; ui.drawerOff = 0;
+  $("#drawerLog").textContent = "";
+  $("#drawer").classList.add("open");
+  await tailJob();
+}
+async function tailJob() {
+  if (!ui.drawerJob) return;
+  const r = await api(`/api/job/${encodeURIComponent(ui.drawerJob)}?offset=${ui.drawerOff}`);
+  const pre = $("#drawerLog"), atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30;
+  if (r.text) { pre.textContent += r.text; if (atBottom) pre.scrollTop = pre.scrollHeight; }
+  ui.drawerOff = r.offset;
+  const j = r.job || {};
+  $("#drawerTitle").innerHTML = `${esc(j.manager)} --${esc(j.action)} <span class="st ${j.state}">${(j.state || "").toUpperCase()}</span>`;
+  if (!pre.textContent) pre.textContent = j.state === "queued" ? "queued…" : "(no output)";
+}
+function closeDrawer() { ui.drawerJob = null; $("#drawer").classList.remove("open"); }
+
+// malware details: the OSV advisory (or a pointer to Socket's page), plus where pkgdash found it
+async function openAdvisory(d) {
+  ui.drawerJob = null;
+  const pre = $("#drawerLog"), where = d.ctx !== d.pkg ? `inside ${d.ctx}` : "installed";
+  $("#drawerTitle").innerHTML = `<span style="color:var(--red)">☠ ${esc(d.adv)}</span> · ${esc(d.pkg)} ${esc(d.ver)}`;
+  pre.textContent = "loading…";
+  $("#drawer").classList.add("open");
+  const link = (u, t) => `<a class="link" href="${esc(u)}" target="_blank" rel="noopener">${esc(t || u)}</a>`;
+  const found = `<b>Found:</b> ${esc(d.pkg)} ${esc(d.ver)} (${esc(where)}, ${esc(d.mid)})\n\n`;
+  if (d.adv.startsWith("Socket")) {
+    const u = socketUrl(d.mid, d.pkg, d.ver);
+    pre.innerHTML = `${found}<b>Verdict:</b> ${esc(d.adv)}\n\nSocket's API only gives the verdict; its analysis (what the code does, and why) is on the package page:\n${link(u)}`;
+    return;
+  }
+  try {
+    const a = await api(`/api/advisory?id=${encodeURIComponent(d.adv)}`);
+    const ranges = (a.affected || []).flatMap(x => (x.ranges || []).map(r => (r.events || []).map(e => Object.entries(e).map(([k, v]) => `${k} ${v}`).join("")).join(" → ")));
+    const vers = (a.affected || []).flatMap(x => x.versions || []);
+    const details = (a.details || "").split("_-= Per source details")[0].replace(/\n?---\s*$/, "").trim() || (a.details || "").replace(/^[\s\S]*?## Source:[^\n]*\n/, "").trim();
+    pre.innerHTML = found
+      + `<b>${esc(a.summary || a.id)}</b>\n`
+      + (a.published ? `published ${esc(a.published.slice(0, 10))}${a.modified ? ` · updated ${esc(a.modified.slice(0, 10))}` : ""}\n` : "")
+      + (a.aliases && a.aliases.length ? `also known as ${a.aliases.map(x => link(`https://osv.dev/vulnerability/${encodeURIComponent(x)}`, x)).join(", ")}\n` : "")
+      + `\n<b>Affected versions:</b> ${esc(ranges.join("; ") || (vers.length ? vers.slice(0, 30).join(", ") + (vers.length > 30 ? ` … (${vers.length} in all)` : "") : "see OSV"))}\n`
+      + `\n${esc(details || "(no details given)")}\n`
+      + ((a.references || []).length ? `\n<b>References:</b>\n${a.references.map(r => link(r.url)).join("\n")}\n` : "")
+      + `\n${link(`https://osv.dev/vulnerability/${encodeURIComponent(a.id)}`, "Full advisory on osv.dev")}`;
+  } catch (e) {
+    pre.innerHTML = `${found}Couldn't load the advisory from OSV right now.\n${link(`https://osv.dev/vulnerability/${encodeURIComponent(d.adv)}`, "Open it on osv.dev")}`;
+  }
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", e => {
+  const adv = e.target.closest("[data-adv]");
+  if (adv && !e.target.closest("a")) { openAdvisory(adv.dataset); return; }
+  const r = e.target.closest("[data-run]");
+  if (r && !r.disabled) { const [m, a] = r.dataset.run.split(":"); run(m, a, r); return; }
+  const u = e.target.closest("[data-upd]");
+  if (u && !u.disabled) { updateOne(u.dataset.upd, u.dataset.kind, u.dataset.pkg, u); return; }
+  const fx = e.target.closest("[data-fix]");
+  if (fx && !fx.disabled) { fixProject(fx.dataset.kind, fx.dataset.pkg, fx); return; }
+  const ig = e.target.closest("[data-ign]");
+  if (ig) { ignoreProject(ig.dataset.mid, ig.dataset.pkg, ig.dataset.ign === "1"); return; }
+  const j = e.target.closest("[data-job]");
+  if (j) { openJob(j.dataset.job); return; }
+  const g = e.target.closest("[data-goto]");
+  if (g) { location.hash = g.dataset.goto; return; }
+  const t = e.target.closest("[data-tab]");
+  if (t) { ui.mTab = t.dataset.tab; viewMgr(route()[1]); return; }
+  const c = e.target.closest("[data-sev]");
+  if (c) { const s = c.dataset.sev; ui.vulnSev.has(s) ? ui.vulnSev.delete(s) : ui.vulnSev.add(s); viewVulns(); return; }
+  if (e.target.closest(".nav-item")) $("#side").classList.remove("open");
+});
+$("#drawerClose").onclick = closeDrawer;
+$("#bell").onclick = () => location.hash = "#/events";
+$("#menuBtn").onclick = () => $("#side").classList.toggle("open");
+$("#q").addEventListener("input", () => { if (route()[0] !== "search") location.hash = "#/search"; else viewSearch(); });
+document.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && (e.key === "f" || e.key === "k")) { e.preventDefault(); $("#q").focus(); $("#q").select(); }
+  if (e.key === "Escape") { if (ui.drawerJob) closeDrawer(); else if (document.activeElement === $("#q")) { $("#q").value = ""; $("#q").blur(); location.hash = "#/dashboard"; } }
+});
+window.addEventListener("hashchange", () => { ui.filter = ""; if (route()[0] !== "m") ui.mTab = "packages"; renderChrome(); render(true); if (route()[0] === "events" && S.unread) api("/api/events/read", {}); });
+
+async function loop() {
+  await refresh();
+  await tailJob().catch(() => {});
+  const busy = S && S.jobs.some(j => j.state === "running" || j.state === "queued");
+  setTimeout(loop, busy || ui.drawerJob ? 1500 : 4000);
+}
+loop();
+setInterval(() => { if (S) { S.uptime += 1; S.now += 1; const u = document.querySelector(".page-head .sub b:nth-of-type(2)"); if (u && route()[0] === "dashboard") u.textContent = uptime(S.uptime); } }, 1000);
+</script>
+</body>
+</html>
