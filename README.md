@@ -126,7 +126,9 @@ followed by a re-scan. The server only accepts names its last scan found.
 Updates wait until a release is that old, since hijacked releases are usually caught and pulled within days.
 uv uses `--exclude-newer` and npm `--before`, which also cover their dependencies; brew/go/cargo skip packages
 still cooling (cargo is pinned to the scanned version). Release dates come from PyPI, the npm registry, the
-Go proxy and crates.io; Homebrew has none, so its clock starts when a scan first sees the version.
+Go proxy and crates.io; Homebrew has none, so formulae use the build time of the version's first bottle on
+ghcr.io, and casks (no bottles) start the clock when a scan first sees the version. pip packages show no
+cooldown, since pkgdash doesn't update them.
 </details>
 
 <details>
@@ -145,7 +147,8 @@ covered (OSV has no Homebrew malware data).
 The malware check also asks Socket's API. Its blocking verdicts (malware, typosquats, protestware…) block
 updates the same way, and each pending version gets a note: `socket ✓`, `not analysed yet`, or what it starts
 doing that the installed version didn't (`new: install script · network access`). Add the token on the setup
-page: it's tested against Socket, then stored in the login Keychain (item `pkgdash-socket-token`) through
+page; it only needs the `packages:list` scope (pkgdash calls `organizations`, `quota` and the batch PURL
+lookup, read-only). It's tested against Socket, then stored in the login Keychain (item `pkgdash-socket-token`) through
 `security -i` on stdin, so it never appears on a command line, and it's never written to pkgdash's own
 files. Answers are cached in state.json (installed versions for 3 days, pending ones for a scan) because the
 free plan's quota is small (500, 100 per lookup); the settings page shows what's left.

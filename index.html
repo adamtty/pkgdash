@@ -369,10 +369,12 @@ function progressHtml(mid) {
   const more = queued.length ? ` · +${queued.length} queued` : "";
   return `${bar}<div class="step"><b>${VERB[run.action]}${run.pkg ? " " + esc(run.pkg) : ""}</b> ${secs(el)}${eta}${more}${run.step ? " — " + esc(run.step) : ""}</div>`;
 }
+// whether pkgdash installs updates for this package's manager (pip's are left to Homebrew / macOS)
+const canUpdate = p => { const m = mgr(p.mid); return !!m && m.actions.includes("update") && !m.hold; };
 // seconds until a package's new version is past its cooldown period (matches cooldown_left in server.py)
 const coolLeft = p => {
   const days = Number(S.settings.cooldown_days) || 0;
-  return days > 0 && p.outdated && p.latest && p.released ? Math.max(0, p.released + days * 86400 - S.now) : 0;
+  return days > 0 && canUpdate(p) && p.outdated && p.latest && p.released ? Math.max(0, p.released + days * 86400 - S.now) : 0;
 };
 const leftText = s => s >= 86400 ? `${Math.ceil(s / 86400)} day${Math.ceil(s / 86400) === 1 ? "" : "s"}` : `${Math.max(1, Math.ceil(s / 3600))} hour${Math.ceil(s / 3600) <= 1 ? "" : "s"}`;
 // matches flag_text in server.py
@@ -557,6 +559,8 @@ function viewDash() {
   const t = S.totals;
   const lastScan = Math.max(0, ...S.managers.map(m => m.scanned_at || 0));
   const cooling = S.managers.reduce((a, m) => a + (m.cooling || 0), 0), blocked = S.managers.reduce((a, m) => a + (m.blocked || 0), 0);
+  // outdated in managers pkgdash doesn't update (pip): not "ready", they're updated by hand
+  const manual = S.managers.filter(m => !m.separate && (m.hold || !m.actions.includes("update"))).reduce((a, m) => a + (m.outdated || 0), 0);
   $("#view").innerHTML = `
     <div class="page-head">
       <div><h1>SYSTEM_OVERVIEW</h1><div class="sub">Status: <b>ONLINE</b> | Uptime: <b>${uptime(S.uptime)}</b> | Last scan: <b>${ago(lastScan || null)}</b> | Next: scan <b>${until(S.next.scan)}</b> · audit <b>${until(S.next.audit)}</b></div></div>
@@ -568,7 +572,7 @@ function viewDash() {
     <div class="grid stats">
       ${statCard("", "PACKAGES_TRACKED", "box", fmt(t.packages), `<span class="tag">${icon("plus").replace("<svg", '<svg width="12" height="12"')} +${t.new7}</span>`, "new packages / 7d", "#/packages")}
       ${statCard(t.high ? "red" : t.vulns ? "amber" : "", "KNOWN_VULNS", "shield", fmt(t.vulns), `<span class="tag ${t.high ? "red" : "muted"}">${t.high} high/crit</span>`, "across all audits", "#/vulns")}
-      ${statCard("amber", "OUTDATED", "up", fmt(t.outdated), `<span class="tag muted">${cooling} in cooldown</span>${blocked ? ` <span class="tag red">${blocked} blocked</span>` : ""}`, `${Math.max(0, t.outdated - cooling - blocked)} ready to update`, "#/outdated")}
+      ${statCard("amber", "OUTDATED", "up", fmt(t.outdated), `<span class="tag muted">${cooling} in cooldown</span>${blocked ? ` <span class="tag red">${blocked} blocked</span>` : ""}`, `${Math.max(0, t.outdated - cooling - blocked - manual)} ready to update${manual ? ` · ${manual} by hand` : ""}`, "#/outdated")}
       ${statCard("blue", "JOBS_24H", "pulse", fmt(t.jobs24), `<span class="tag ${t.failed24 ? "red" : "blue"}">${t.failed24} failed</span>`, "scan · audit · update", "#/jobs")}
     </div>
     <div class="grid">${S.managers.filter(m => m.available).map(mgrCard).join("")}</div>
@@ -670,8 +674,7 @@ function viewMgr(id) {
 /* ---------- package tables (manager pages, PACKAGES, OUTDATED) ---------- */
 // rows are inventory packages with their manager id added as `mid`
 function updBtn(p) {
-  const m = mgr(p.mid);
-  if (!m || !m.actions.includes("update") || m.hold) return "";
+  if (!canUpdate(p)) return "";
   if (pkgBusy(p.mid, p)) return ' <button class="btn sm busy" disabled>&gt; updating…</button>';
   const attrs = `data-upd="${esc(p.mid)}" data-kind="${esc(p.kind)}" data-pkg="${esc(p.name)}"`;
   return coolLeft(p) ? ` <button class="btn sm" ${attrs}>&gt; update anyway</button>` : ` <button class="btn sm warn" ${attrs}>&gt; update</button>`;
@@ -752,8 +755,9 @@ viewOutdated.shell = () => `<div class="page-head"><div><h1>OUTDATED</h1><div cl
 function viewOutdated() {
   const rows = allPkgs().filter(p => p.outdated)
     .sort((a, b) => (!!a.blocked - !!b.blocked) || (coolLeft(a) - coolLeft(b)) || a.mid.localeCompare(b.mid) || a.name.localeCompare(b.name));
-  const ready = rows.filter(p => !p.blocked && !coolLeft(p)).length, cooling = rows.filter(p => !p.blocked && coolLeft(p)).length;
-  $("#osub").innerHTML = `<b>${ready}</b> ready to update · <b>${cooling}</b> in cooldown period${rows.length - ready - cooling ? ` · <b>${rows.length - ready - cooling}</b> blocked` : ""} · cooldown is ${Number(S.settings.cooldown_days) || 0} days (<a class="link" href="#/config">change</a>)`;
+  const blocked = rows.filter(p => p.blocked).length, manual = rows.filter(p => !p.blocked && !canUpdate(p)).length;
+  const cooling = rows.filter(p => !p.blocked && coolLeft(p)).length, ready = rows.length - blocked - manual - cooling;
+  $("#osub").innerHTML = `<b>${ready}</b> ready to update · <b>${cooling}</b> in cooldown period${blocked ? ` · <b>${blocked}</b> blocked` : ""}${manual ? ` · <b>${manual}</b> to update by hand` : ""} · cooldown is ${Number(S.settings.cooldown_days) || 0} days (<a class="link" href="#/config">change</a>)`;
   $("#obody").innerHTML = rows.length ? pkgTable(rows, true) : `<div class="empty">everything is up to date</div>`;
 }
 
@@ -868,7 +872,7 @@ setupProjects.update = () => {
 
 function setupSocket() {
   return `<div class="form">
-    <div class="row col"><div><div>API token</div><div class="d">free at <a class="link" href="https://socket.dev" target="_blank" rel="noopener">socket.dev</a> → Settings → API Tokens. Kept in your login Keychain (item <code>pkgdash-socket-token</code>), never in pkgdash's own files</div></div>
+    <div class="row col"><div><div>API token</div><div class="d">free at <a class="link" href="https://socket.dev" target="_blank" rel="noopener">socket.dev</a> → Settings → API Tokens. It only needs the <code>packages:list</code> scope (the test below can't check scopes: a missing one shows up as an HTTP 403 in the next scan's log). Kept in your login Keychain (item <code>pkgdash-socket-token</code>), never in pkgdash's own files</div></div>
       <div class="pathrow"><input type="password" id="sockTok" placeholder="sktsec_…" spellcheck="false" autocomplete="off"><button class="btn sm" id="sockSave">&gt; save_&amp;_test</button></div>
       <div class="d" id="sockStatus">checking the Keychain…</div></div>
     ${settingRows(["socket_check"])}
