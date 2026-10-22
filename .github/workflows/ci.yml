@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1" # weekly: everything, fuzzing included
 
 permissions:
   contents: read
@@ -24,6 +26,49 @@ env:
   ZIZMOR_VERSION: 1.31.1
 
 jobs:
+  # Which expensive jobs a pull request needs. Fuzzing runs when the code it fuzzes or the fuzz harnesses change,
+  # not for dependency or CI version bumps (those are fuzzed on main after merge, and weekly). Pushes, the weekly
+  # run and manual runs do everything. If the file list can't be read, everything runs.
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read # list the pull request's changed files
+    outputs:
+      fuzz: ${{ steps.files.outputs.fuzz }}
+      code: ${{ steps.files.outputs.code }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+
+      - name: What changed
+        id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          FUZZ_PATHS: '^(server\.py$|tests/fuzz_|tests/fuzz-corpus/)'
+          DOCS_PATHS: '^(.*\.md|docs/|LICENSE$|\.github/ISSUE_TEMPLATE/)'
+        run: |
+          everything() {
+            echo "fuzz=true" >> "$GITHUB_OUTPUT"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          [ -n "$PR" ] || everything
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)') ||
+            { echo "::warning::couldn't list the changed files; running everything"; everything; }
+          printf '%s\n' "$files"
+          if printf '%s\n' "$files" | grep -Eq "$FUZZ_PATHS"; then fuzz=true; else fuzz=false; fi
+          echo "fuzz=$fuzz" >> "$GITHUB_OUTPUT"
+          if printf '%s\n' "$files" | grep -Evq "$DOCS_PATHS"; then code=true; else code=false; fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -56,6 +101,9 @@ jobs:
 
   build:
     name: Build app
+    needs: changes
+    # skipped only on an explicit "false" (a failed Changes job means run it)
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
@@ -97,6 +145,9 @@ jobs:
 
   fuzz:
     name: Fuzz
+    needs: changes
+    # skipped only on an explicit "false" (a failed Changes job means run it)
+    if: ${{ !cancelled() && needs.changes.outputs.fuzz != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
