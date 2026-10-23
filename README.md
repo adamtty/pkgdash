@@ -196,7 +196,8 @@ people's projects) and drives tools that install software, so:
   - It's signed with the hardened runtime, so injected `DYLD_*` libraries are ignored, and the projects
     folder must be inside your home folder (not `~/Library`).
 - **The dashboard** escapes everything it shows and only links advisory references that use `http(s)`.
-- Registry and OSV requests must be `https://`. Notifications pass package names to `osascript` as
+- Registry and OSV requests must be `https://`, and don't trust eMudhra's (emSign) CA roots, whose
+  intermediate keys turned out to be guessable in October 2026, or Sectigo's AAA root, which cross-signed them. Notifications pass package names to `osascript` as
   arguments, never as script source.
 - The Socket.dev token lives only in the macOS Keychain.
 
