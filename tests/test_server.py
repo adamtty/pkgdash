@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -316,6 +317,40 @@ class Service(unittest.TestCase):
     def test_advisory_ids_are_validated(self):
         for bad in ("../../etc/passwd", "MAL-1/../x", "", "<script>"):
             self.assertEqual(self.req("GET", "/api/advisory?id=" + urllib.request.quote(bad), token=False)[0], 400, bad)
+
+
+class Trust(unittest.TestCase):
+    """Requests to registries, OSV and Socket trust the default roots minus eMudhra's."""
+
+    def test_context_has_roots_but_no_emudhra(self):
+        server.tls_context.cache_clear()
+        ctx = server.tls_context()
+        names = [str(c.get("subject")) for c in ctx.get_ca_certs()]
+        self.assertGreater(len(names), 100)
+        self.assertEqual([n for n in names if "eMudhra" in n or "emSign" in n], [])
+        self.assertTrue(ctx.check_hostname)
+
+    def test_only_emudhra_roots_are_dropped(self):
+        pems = server.PEM_RE.findall(server.ca_bundle())
+        dropped = [p for p in pems if server.distrusted(p)]
+        if not dropped:
+            self.skipTest("this machine's default roots have no eMudhra root")
+        for pem in dropped:
+            self.assertIn(b"emSign", ssl.PEM_cert_to_DER_cert(pem))
+        self.assertGreater(len(pems) - len(dropped), 100)
+
+    def test_ssl_cert_file_is_honoured_and_filtered(self):
+        pems = server.PEM_RE.findall(server.ca_bundle())
+        bundle = os.path.join(UNIT_HOME, "corp.pem")
+        with open(bundle, "w") as f:
+            f.write("\n".join([next(p for p in pems if not server.distrusted(p))] + [p for p in pems if server.distrusted(p)]))
+        os.environ["SSL_CERT_FILE"] = bundle
+        server.tls_context.cache_clear()
+        try:
+            self.assertEqual(len(server.tls_context().get_ca_certs()), 1)
+        finally:
+            del os.environ["SSL_CERT_FILE"]
+            server.tls_context.cache_clear()
 
 
 class Demo(unittest.TestCase):

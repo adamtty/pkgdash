@@ -7,6 +7,7 @@ Runs as a LaunchAgent under /usr/bin/python3 (stdlib only) on 127.0.0.1.
 """
 import calendar
 import concurrent.futures
+import functools
 import getpass
 import hashlib
 import json
@@ -17,6 +18,7 @@ import secrets
 import shlex
 import shutil
 import socket
+import ssl
 import subprocess
 import tarfile
 import tempfile
@@ -167,6 +169,49 @@ def loads(text, default):
         return default
 
 
+# eMudhra's (emSign) roots are left out of what the registry, OSV and Socket requests trust: in October 2026 the keys of
+# 8 of their intermediate CAs turned out to be guessable. Browsers block those intermediates, but macOS's
+# /etc/ssl/cert.pem still trusts the roots above them. Dropped by SHA-256, or if the root names eMudhra at all.
+EMUDHRA_ROOTS = {
+    "40f6af0346a99aa1cd1d555a4e9cce62c7f9634603ee406615833dc8c8d00367",  # emSign Root CA - G1
+    "86a1ecba089c4a8d3bbe2734c612ba341d813e043cf9e8a862cd5c57a36bbe6b",  # emSign ECC Root CA - G3
+    "125609aa301da0a249b97a8239cb6a34216f44dcac9f3954b14292f2e8c8608f",  # emSign Root CA - C1
+    "bc4d809b15189d78db3e1d8cf4f9726a795da1643ca5f1358e1ddb0edc0d7eb3",  # emSign ECC Root CA - C3
+}
+PEM_RE = re.compile(r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----", re.DOTALL)
+
+
+def distrusted(pem):
+    der = ssl.PEM_cert_to_DER_cert(pem)
+    return hashlib.sha256(der).hexdigest() in EMUDHRA_ROOTS or b"eMudhra" in der
+
+
+def ca_bundle():
+    """The roots Python trusts by default, as PEM: $SSL_CERT_FILE, else its default file, else its default folder."""
+    paths = ssl.get_default_verify_paths()
+    cafile = os.environ.get(paths.openssl_cafile_env) or paths.cafile
+    if cafile:
+        files = [cafile]
+    elif paths.capath and os.path.isdir(paths.capath):
+        files = [os.path.join(paths.capath, n) for n in sorted(os.listdir(paths.capath))]
+    else:
+        files = []
+    out = []
+    for f in files:
+        try:
+            with open(f, encoding="utf-8", errors="replace") as fh:  # labels in comments can be non-ASCII
+                out.append(fh.read())
+        except (OSError, ValueError):
+            pass
+    return "\n".join(out)
+
+
+@functools.lru_cache(maxsize=None)
+def tls_context():
+    pems = list(dict.fromkeys(p for p in PEM_RE.findall(ca_bundle()) if not distrusted(p)))  # a folder repeats them
+    return ssl.create_default_context(cadata="\n".join(pems)) if pems else ssl.create_default_context()
+
+
 def http_json(url, body=None, timeout=30, headers=None):
     if not url.startswith("https://"):  # registries and OSV only: never file: or plain http
         raise ValueError("not an https URL: " + url[:80])
@@ -174,7 +219,7 @@ def http_json(url, body=None, timeout=30, headers=None):
         url, data=json.dumps(body).encode() if body is not None else None,
         headers={"User-Agent": "pkgdash/1.0 (local dashboard)",
                  "Content-Type": "application/json", **(headers or {})})
-    with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
+    with urllib.request.urlopen(req, timeout=timeout, context=tls_context()) as r:  # noqa: S310
         return json.loads(r.read())
 
 
@@ -595,7 +640,7 @@ def socket_api(token, path, body=None, timeout=30):
         "https://api.socket.dev/v0/" + path, data=json.dumps(body).encode() if body is not None else None,
         headers={"Authorization": "Bearer " + token, "User-Agent": "pkgdash/1.0 (local dashboard)",
                  "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 - fixed https://api.socket.dev/ prefix
+    with urllib.request.urlopen(req, timeout=timeout, context=tls_context()) as r:  # noqa: S310 - fixed https://api.socket.dev/ prefix
         return r.read().decode()
 
 
