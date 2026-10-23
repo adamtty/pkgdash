@@ -171,19 +171,23 @@ def loads(text, default):
 
 # eMudhra's (emSign) roots are left out of what the registry, OSV and Socket requests trust: in October 2026 the keys of
 # 8 of their intermediate CAs turned out to be guessable. Browsers block those intermediates, but macOS's
-# /etc/ssl/cert.pem still trusts the roots above them. Dropped by SHA-256, or if the root names eMudhra at all.
-EMUDHRA_ROOTS = {
+# /etc/ssl/cert.pem still trusts the roots above them, and Sectigo's AAA root, which cross-signed twins of them.
+# Dropped by SHA-256, or if the root names eMudhra at all.
+DISTRUSTED_ROOTS = {
     "40f6af0346a99aa1cd1d555a4e9cce62c7f9634603ee406615833dc8c8d00367",  # emSign Root CA - G1
     "86a1ecba089c4a8d3bbe2734c612ba341d813e043cf9e8a862cd5c57a36bbe6b",  # emSign ECC Root CA - G3
     "125609aa301da0a249b97a8239cb6a34216f44dcac9f3954b14292f2e8c8608f",  # emSign Root CA - C1
     "bc4d809b15189d78db3e1d8cf4f9726a795da1643ca5f1358e1ddb0edc0d7eb3",  # emSign ECC Root CA - C3
+    # Sectigo's legacy AAA root: it cross-signed twins of the 8 compromised intermediates. Browsers and certifi
+    # stopped trusting it for websites in 2025, but macOS's /etc/ssl/cert.pem still does.
+    "d7a7a0fb5d7e2731d771e9484ebcdef71d5f0c3e0a2948782bc83ee0ea699ef4",  # AAA Certificate Services (Comodo)
 }
 PEM_RE = re.compile(r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----", re.DOTALL)
 
 
 def distrusted(pem):
     der = ssl.PEM_cert_to_DER_cert(pem)
-    return hashlib.sha256(der).hexdigest() in EMUDHRA_ROOTS or b"eMudhra" in der
+    return hashlib.sha256(der).hexdigest() in DISTRUSTED_ROOTS or b"eMudhra" in der
 
 
 def ca_bundle():

@@ -327,7 +327,7 @@ class Trust(unittest.TestCase):
         ctx = server.tls_context()
         names = [str(c.get("subject")) for c in ctx.get_ca_certs()]
         self.assertGreater(len(names), 100)
-        self.assertEqual([n for n in names if "eMudhra" in n or "emSign" in n], [])
+        self.assertEqual([n for n in names if "eMudhra" in n or "emSign" in n or "AAA Certificate" in n], [])
         self.assertTrue(ctx.check_hostname)
 
     def test_only_emudhra_roots_are_dropped(self):
@@ -336,7 +336,8 @@ class Trust(unittest.TestCase):
         if not dropped:
             self.skipTest("this machine's default roots have no eMudhra root")
         for pem in dropped:
-            self.assertIn(b"emSign", ssl.PEM_cert_to_DER_cert(pem))
+            der = ssl.PEM_cert_to_DER_cert(pem)
+            self.assertTrue(b"emSign" in der or b"AAA Certificate" in der)
         self.assertGreater(len(pems) - len(dropped), 100)
 
     def test_ssl_cert_file_is_honoured_and_filtered(self):
