@@ -19,7 +19,7 @@ env:
   # newest CPython that Atheris publishes wheels for (see the fuzzing job)
   ATHERIS_PYTHON: "3.14"
   # renovate: datasource=pypi depName=ruff
-  RUFF_VERSION: 0.17.1
+  RUFF_VERSION: 0.17.3
   # renovate: datasource=pypi depName=shellcheck-py
   SHELLCHECK_VERSION: 0.11.0.1
   # renovate: datasource=pypi depName=zizmor
@@ -40,7 +40,7 @@ jobs:
       code: ${{ steps.files.outputs.code }}
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -75,7 +75,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -109,7 +109,7 @@ jobs:
     steps:
       # macOS runners only support audit mode: connections are logged, not blocked
       - name: Harden runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
 
@@ -131,7 +131,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
 
@@ -152,7 +152,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -166,7 +166,7 @@ jobs:
 
       # Atheris only ships Linux x86-64 wheels, for CPython 3.12-3.14 (3.1.0 has none for 3.15). The
       # version is an expression so Renovate leaves it alone: raise it when an Atheris release adds wheels.
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.ATHERIS_PYTHON }}
 
